@@ -128,7 +128,7 @@ void ReplSetDistLockManager::doTask() {
             auto txn = cc().makeOperationContext();
             auto pingStatus = _catalog->ping(txn.get(), _processID, Date_t::now());
 
-            if (!pingStatus.isOK()) {
+            if (!pingStatus.isOK() && pingStatus.code() != ErrorCodes::NotMaster) {
                 warning() << "pinging failed for distributed lock pinger" << causedBy(pingStatus);
             }
 
