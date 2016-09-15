@@ -410,7 +410,7 @@ void ParallelSortClusteredCursor::setupVersionAndHandleSlaveOk(
         const DBClientReplicaSet* replConn = dynamic_cast<const DBClientReplicaSet*>(rawConn);
         invariant(replConn);
         ReplicaSetMonitorPtr rsMonitor = ReplicaSetMonitor::get(replConn->getSetName());
-        invariant(rsMonitor != 0);
+        uassert(16388, "Replica set must have a monitor", rsMonitor != nullptr);
         if (!rsMonitor->isKnownToHaveGoodPrimary()) {
             state->conn->donotCheckVersion();
 
