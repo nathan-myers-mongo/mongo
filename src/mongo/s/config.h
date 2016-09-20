@@ -35,7 +35,6 @@
 #include "mongo/platform/atomic_word.h"
 #include "mongo/s/client/shard.h"
 #include "mongo/util/concurrency/mutex.h"
-#include "mongo/db/write_concern_options.h"
 
 namespace mongo {
 
@@ -169,14 +168,15 @@ public:
     void getAllShardIds(std::set<ShardId>* shardIds);
     void getAllShardedCollections(std::set<std::string>& namespaces);
 
-protected:
+private:
+
+    bool _dropDatabaseShard(ConnectionString const& connString,
+                            ShardId const& shardId,
+                            OperationContext* txn,
+                            std::string& errmsg);
+
     typedef std::map<std::string, CollectionInfo> CollectionInfoMap;
     typedef AtomicUInt64::WordType Counter;
-
-    bool _dropDatabaseShard(StatusWith<std::shared_ptr<Shard>> const& shard,
-                            ShardId const& shardId,
-                            WriteConcernOptions const& writeConcernOptions,
-                            std::string& errmsg);
 
     /**
      * Returns true if it is successful at loading the DBConfig, false if the database is not found,

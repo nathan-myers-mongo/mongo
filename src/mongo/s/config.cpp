@@ -589,7 +589,7 @@ bool DBConfig::dropDatabase(OperationContext* txn, string& errmsg) {
     // 3
     {
         const auto shard = uassertStatusOK(grid.shardRegistry()->getShard(txn, _primaryId));
-        if (!_dropDatabaseShard(shard, _primaryId, txn->getWriteConcern(), errmsg)) {
+        if (!_dropDatabaseShard(shard->getConnString(), _primaryId, txn, errmsg)) {
             return false;
         }
     }
@@ -598,8 +598,7 @@ bool DBConfig::dropDatabase(OperationContext* txn, string& errmsg) {
     for (const ShardId& shardId : shardIds) {
         const auto shardStatus = grid.shardRegistry()->getShard(txn, shardId);
         if (shardStatus.isOK()) {
-            if (!_dropDatabaseShard(
-                    shardStatus, shardId, txn->getWriteConcern(), errmsg)) {
+            if (!_dropDatabaseShard(shardStatus.getValue()->getConnString(), shardId, txn, errmsg)) {
                 return false;
             }
         }
@@ -613,14 +612,16 @@ bool DBConfig::dropDatabase(OperationContext* txn, string& errmsg) {
     return true;
 }
 
-bool DBConfig::_dropDatabaseShard(StatusWith<std::shared_ptr<Shard>> const& shard,
+// _dropDatabaseShard must be called with the lock on _collections held.
+
+bool DBConfig::_dropDatabaseShard(ConnectionString const& connString,
                                   ShardId const& shardId,
-                                  WriteConcernOptions const& writeConcernOptions,
+                                  OperationContext* txn,
                                   std::string& errmsg) {
     BSONObj res;
     {
-        ScopedDbConnection conn(shard.getValue()->getConnString(), 30.0);
-        if (!conn->dropDatabase(_name, writeConcernOptions, &res)) {
+        ScopedDbConnection conn(connString, 30.0);
+        if (!conn->dropDatabase(_name, txn->getWriteConcern(), &res)) {
             errmsg = res.toString() + " at " + shardId.toString();
             return false;
         }
