@@ -598,7 +598,8 @@ bool DBConfig::dropDatabase(OperationContext* txn, string& errmsg) {
     for (const ShardId& shardId : shardIds) {
         const auto shardStatus = grid.shardRegistry()->getShard(txn, shardId);
         if (shardStatus.isOK()) {
-            if (!_dropDatabaseShard(shardStatus.getValue()->getConnString(), shardId, txn, errmsg)) {
+            if (!_dropDatabaseShard(
+                    shardStatus.getValue()->getConnString(), shardId, txn, errmsg)) {
                 return false;
             }
         }

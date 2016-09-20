@@ -169,7 +169,6 @@ public:
     void getAllShardedCollections(std::set<std::string>& namespaces);
 
 private:
-
     bool _dropDatabaseShard(ConnectionString const& connString,
                             ShardId const& shardId,
                             OperationContext* txn,
