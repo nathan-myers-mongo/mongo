@@ -547,8 +547,11 @@ bool DBConfig::dropDatabase(OperationContext* txn, string& errmsg) {
      */
 
     log() << "DBConfig::dropDatabase: " << _name;
+
     grid.catalogClient(txn)->logChange(
         txn, "dropDatabase.start", _name, BSONObj(), ShardingCatalogClient::kMajorityWriteConcern);
+
+    stdx::lock_guard<stdx::mutex> lk(_lock);
 
     // 1
     grid.catalogCache()->invalidate(_name);
@@ -558,6 +561,7 @@ bool DBConfig::dropDatabase(OperationContext* txn, string& errmsg) {
         DatabaseType::ConfigNS,
         BSON(DatabaseType::name(_name)),
         ShardingCatalogClient::kMajorityWriteConcern);
+
     if (!result.isOK()) {
         errmsg = result.reason();
         log() << "could not drop '" << _name << "': " << errmsg;
@@ -569,57 +573,33 @@ bool DBConfig::dropDatabase(OperationContext* txn, string& errmsg) {
     set<ShardId> shardIds;
 
     // 2
-    while (true) {
-        int num = 0;
-        if (!_dropShardedCollections(txn, num, shardIds, errmsg)) {
-            return 0;
-        }
+    int num = 0;
+    for (auto& e : _collections) {
+        if (e.second.isSharded()) {
+            LOG(1) << "\t dropping sharded collection: " << e.first << " (" << ++num << ")";
+            e.second.getCM()->getAllShardIds(&shardIds);
 
-        log() << "   DBConfig::dropDatabase: " << _name << " dropped sharded collections: " << num;
+            auto status = grid.catalogClient(txn)->dropCollection(txn, NamespaceString(e.first));
 
-        if (num == 0) {
-            break;
+            uassertStatusOK(status);
         }
     }
+    log() << "   DBConfig::dropDatabase: " << _name << " dropped sharded collections: " << num;
 
     // 3
     {
         const auto shard = uassertStatusOK(grid.shardRegistry()->getShard(txn, _primaryId));
-
-        ScopedDbConnection conn(shard->getConnString(), 30.0);
-        BSONObj res;
-        if (!conn->dropDatabase(_name, txn->getWriteConcern(), &res)) {
-            errmsg = res.toString() + " at " + _primaryId.toString();
-            return 0;
-        }
-        conn.done();
-        if (auto wcErrorElem = res["writeConcernError"]) {
-            auto wcError = wcErrorElem.Obj();
-            if (auto errMsgElem = wcError["errmsg"]) {
-                errmsg = errMsgElem.str() + " at " + _primaryId.toString();
-                return false;
-            }
+        if (!_dropDatabaseShard(shard, _primaryId, txn->getWriteConcern(), errmsg)) {
+            return false;
         }
     }
 
     // 4
     for (const ShardId& shardId : shardIds) {
         const auto shardStatus = grid.shardRegistry()->getShard(txn, shardId);
-        if (!shardStatus.isOK()) {
-            continue;
-        }
-
-        ScopedDbConnection conn(shardStatus.getValue()->getConnString(), 30.0);
-        BSONObj res;
-        if (!conn->dropDatabase(_name, txn->getWriteConcern(), &res)) {
-            errmsg = res.toString() + " at " + shardId.toString();
-            return 0;
-        }
-        conn.done();
-        if (auto wcErrorElem = res["writeConcernError"]) {
-            auto wcError = wcErrorElem.Obj();
-            if (auto errMsgElem = wcError["errmsg"]) {
-                errmsg = errMsgElem.str() + " at " + shardId.toString();
+        if (shardStatus.isOK()) {
+            if (!_dropDatabaseShard(
+                    shardStatus, shardId, txn->getWriteConcern(), errmsg)) {
                 return false;
             }
         }
@@ -633,49 +613,25 @@ bool DBConfig::dropDatabase(OperationContext* txn, string& errmsg) {
     return true;
 }
 
-bool DBConfig::_dropShardedCollections(OperationContext* txn,
-                                       int& num,
-                                       set<ShardId>& shardIds,
-                                       string& errmsg) {
-    num = 0;
-    set<string> seen;
-    while (true) {
-        CollectionInfoMap::iterator i = _collections.begin();
-        for (; i != _collections.end(); ++i) {
-            if (i->second.isSharded()) {
-                break;
-            }
-        }
-
-        if (i == _collections.end()) {
-            break;
-        }
-
-        if (seen.count(i->first)) {
-            errmsg = "seen a collection twice!";
+bool DBConfig::_dropDatabaseShard(StatusWith<std::shared_ptr<Shard>> const& shard,
+                                  ShardId const& shardId,
+                                  WriteConcernOptions const& writeConcernOptions,
+                                  std::string& errmsg) {
+    BSONObj res;
+    {
+        ScopedDbConnection conn(shard.getValue()->getConnString(), 30.0);
+        if (!conn->dropDatabase(_name, writeConcernOptions, &res)) {
+            errmsg = res.toString() + " at " + shardId.toString();
             return false;
         }
-
-        seen.insert(i->first);
-        LOG(1) << "\t dropping sharded collection: " << i->first;
-
-        i->second.getCM()->getAllShardIds(&shardIds);
-
-        uassertStatusOK(grid.catalogClient(txn)->dropCollection(txn, NamespaceString(i->first)));
-
-        // We should warn, but it's not a fatal error if someone else reloaded the db/coll as
-        // unsharded in the meantime
-        if (!removeSharding(txn, i->first)) {
-            warning() << "collection " << i->first
-                      << " was reloaded as unsharded before drop completed"
-                      << " during drop of all collections";
-        }
-
-        num++;
-        uassert(10184, "_dropShardedCollections too many collections - bailing", num < 100000);
-        LOG(2) << "\t\t dropped " << num << " so far";
     }
-
+    if (auto wcErrorElem = res["writeConcernError"]) {
+        auto wcError = wcErrorElem.Obj();
+        if (auto errMsgElem = wcError["errmsg"]) {
+            errmsg = errMsgElem.str() + " at " + shardId.toString();
+            return false;
+        }
+    }
     return true;
 }
 
