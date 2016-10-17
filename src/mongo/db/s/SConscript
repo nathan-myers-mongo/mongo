@@ -204,6 +204,8 @@ env.CppUnitTest(
 env.CppUnitTest(
     target='sharding_state_test',
     source=[
+        'migration_source_manager_test.cpp',
+        'migration_destination_manager_test.cpp',
         'active_migrations_registry_test.cpp',
         'metadata_manager_test.cpp',
         'sharding_state_test.cpp',

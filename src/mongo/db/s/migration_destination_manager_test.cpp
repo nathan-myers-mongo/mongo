@@ -31,9 +31,11 @@
 #include "mongo/db/s/migration_destination_manager.h"
 
 #include "mongo/base/status_with.h"
+#include "mongo/base/string_data.h"
 #include "mongo/bson/bsonobjbuilder.h"
 #include "mongo/db/jsobj.h"
 #include "mongo/unittest/unittest.h"
+#include "mongo/unittest/bson_test_util.h"
 
 namespace mongo {
 
@@ -46,10 +48,10 @@ TEST(MigrationDestinationManager, SetGetState) {
     using State = MigrationDestinationManager::State;
     static auto const READY = MigrationDestinationManager::READY;
     static auto const ABORT = MigrationDestinationManager::ABORT;
-    for (State s = READY s <= ABORT; s = State(s + 1)) {
-        m.setState(s);
-        State s = getState();
-        ASSERT_EQ(s.value(), s);
+    for (State s1 = READY; s1 <= ABORT; s1 = State(s1 + 1)) {
+        m.setState(s1);
+        State s2 = m.getState();
+        ASSERT_EQ(s1, s2);
     }
 }
 
@@ -63,34 +65,47 @@ TEST(MigrationDestinationManager, ReportEmpty) {
     MigrationDestinationManager m;
     BSONObjBuilder b;
     m.report(b);
-    ASSERT_EQ(b, BSON("active: false");
+    auto o = b.obj();
+    ASSERT_EQ(o.nFields(), 1);
+    ASSERT(o.hasField("active"));
+    auto e = o["active"];
+    ASSERT(e.isBoolean());
+    ASSERT(e.boolean());
 }
 
 TEST(MigrationDestinationManager, GetMigrationStatusReportEmpty) {
     MigrationDestinationManager m;
-    BSONObj o = m.getMigrationStatusReport(b);
-    ASSERT(o.empty());
+    BSONObj o = m.getMigrationStatusReport();
+    ASSERT(o.isEmpty());
 }
 
-TEST(MigrationDestinationManager, Start) {
-    ActiveMigrationsRegistry registry;
+Status start(ActiveMigrationsRegistry& registry, MigrationDestinationManager& m)
+{
     ScopedRegisterReceiveChunk chunk(&registry);
-    const MigrationSessionId sessionId = "12345";
-    const ConnectionString fromConn = "localhost:1234";
+    const MigrationSessionId sessionId(MigrationSessionId::generate("here", "there"));
+    const ConnectionString fromConn(ConnectionString::forLocal());
     const ShardId from("from");
     const ShardId to("to");
     const BSONObj min = BSON(" ");
     const BSONObj max = BSON(" ");
     const BSONObj pat = BSON(" ");
     const OID epoch = 100;
+
+    return m.start(std::move(chunk), sessionId, fromConn, from, to, min, max, pat, epoch, wc);
+}
+
+
+TEST(MigrationDestinationManager, Start) {
     const WriteConcernOptions wc;
 
     {
+        ActiveMigrationsRegistry registry;
         MigrationDestinationManager m;
-        Status s = m.start(
-            std::move(chunk), sessionId, fromConn, from, to, min, max, pat, epoch, wc);
-        ASSERT(s.OK());
+
+        auto s = start(registry, m)
+        ASSERT(s.isOK());
         ASSERT(m.isActive());
+
         BSONObj o = m.getMigrationStatusReport(b);
         ASSERT_EQ(o,
             BSON("active" << true
@@ -105,31 +120,32 @@ TEST(MigrationDestinationManager, Start) {
                 << "clonedBytes" << 0
                 << "catchup" << 0
                 << "steady" << 0)
-            );
+            ));
     }
     { 
+        ActiveMigrationsRegistry registry;
         MigrationDestinationManager m;
-        Status s = m.start(
-            stdx::move(chunk), sessionId, fromConn, from, to, min, max, pat, epoch, wc);
+        Status s = start(registry, m);
         bool did = m.abort(sessionId);
         ASSERT(did);
         ASSERT(m.isActive());
     }
     { 
+        ActiveMigrationsRegistry registry;
         MigrationDestinationManager m;
-        Status s = m.start(
-            stdx::move(chunk), sessionId, fromConn, from, to, min, max, pat, epoch, wc);
+        Status s = start(registry, m);
         m.abortWithoutSessionIdCheck();
         ASSERT(m.isActive());
     }
     { 
+        ActiveMigrationsRegistry registry;
         MigrationDestinationManager m;
-        Status s = m.start(
-            stdx::move(chunk), sessionId, fromConn, from, to, min, max, pat, epoch, wc);
+        Status s = start(registry, m);
         bool did = m.startCommit(sessionId);
         ASSERT(did);
     }
 }
+#if 0
 
 TEST(MigrationDestinationManager, AbortNoop) {
     const MigrationSessionId sessionId;
@@ -153,6 +169,7 @@ TEST(MigrationDestinationManager, StartCommitNot) {
     bool did = m.startCommit(sessionId);
     ASSERT(!did);
 }
+#endif
 
 }  // namespace
 }  // namespace mongo
