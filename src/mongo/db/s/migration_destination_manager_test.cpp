@@ -36,6 +36,8 @@
 #include "mongo/db/jsobj.h"
 #include "mongo/unittest/unittest.h"
 #include "mongo/unittest/bson_test_util.h"
+#include "mongo/db/write_concern_options.h"
+#include "mongo/bson/util/bson_extract.h"
 
 namespace mongo {
 
@@ -79,70 +81,79 @@ TEST(MigrationDestinationManager, GetMigrationStatusReportEmpty) {
     ASSERT(o.isEmpty());
 }
 
-Status start(ActiveMigrationsRegistry& registry, MigrationDestinationManager& m)
-{
-    ScopedRegisterReceiveChunk chunk(&registry);
-    const MigrationSessionId sessionId(MigrationSessionId::generate("here", "there"));
-    const ConnectionString fromConn(ConnectionString::forLocal());
-    const ShardId from("from");
-    const ShardId to("to");
-    const BSONObj min = BSON(" ");
-    const BSONObj max = BSON(" ");
-    const BSONObj pat = BSON(" ");
-    const OID epoch = 100;
-
-    return m.start(std::move(chunk), sessionId, fromConn, from, to, min, max, pat, epoch, wc);
-}
-
+struct range {
+    range begin() { return *this; }
+    range end() { return *this; }
+    range& operator++() { ++lo_; return *this; }
+    int operator*() { return lo_; }
+    friend bool operator!=(range const& a, range const& b) { return a.lo_ != b.hi_; }
+    int lo_, hi_;
+};
 
 TEST(MigrationDestinationManager, Start) {
     const WriteConcernOptions wc;
 
-    {
+    for (auto i : range{0,3}) {
         ActiveMigrationsRegistry registry;
         MigrationDestinationManager m;
+        const NamespaceString nss("nss");
+        ScopedRegisterReceiveChunk chunk(&registry);
+        const MigrationSessionId sessionId(MigrationSessionId::generate("here", "there"));
+        const ConnectionString fromConn(ConnectionString::forLocal());
+        const ShardId from("from");
+        const ShardId to("to");
+        const BSONObj min = BSON("a" << 1);
+        const BSONObj max = BSON("a" << 2);
+        const BSONObj pat = BSON("key" << 3);
+        OID epoch; epoch.init();
+        OID const& ep = epoch;
+        const WriteConcernOptions wc;
+        
+        auto s =
+            m.start(nss, std::move(chunk), sessionId, fromConn, from, to, min, max, pat, ep, wc);
 
-        auto s = start(registry, m)
         ASSERT(s.isOK());
         ASSERT(m.isActive());
 
-        BSONObj o = m.getMigrationStatusReport(b);
-        ASSERT_EQ(o,
-            BSON("active" << true
-            << "sessionId" << 12345
-            << "ns" << ns
-            << "from" << from
-            << "min" << min
-            << "max" << max
-            << "shardKeyPattern" << pat
-            << "state" << "READY"
-            << "counts" << BSON("cloned" << 0
-                << "clonedBytes" << 0
-                << "catchup" << 0
-                << "steady" << 0)
-            ));
-    }
-    { 
-        ActiveMigrationsRegistry registry;
-        MigrationDestinationManager m;
-        Status s = start(registry, m);
-        bool did = m.abort(sessionId);
-        ASSERT(did);
-        ASSERT(m.isActive());
-    }
-    { 
-        ActiveMigrationsRegistry registry;
-        MigrationDestinationManager m;
-        Status s = start(registry, m);
-        m.abortWithoutSessionIdCheck();
-        ASSERT(m.isActive());
-    }
-    { 
-        ActiveMigrationsRegistry registry;
-        MigrationDestinationManager m;
-        Status s = start(registry, m);
-        bool did = m.startCommit(sessionId);
-        ASSERT(did);
+        switch (i) {
+        case 0: {
+
+            BSONObj o = m.getMigrationStatusReport();
+            std::string s;
+            bool b;
+
+            ASSERT_OK(bsonExtractStringField(o, "from", &s));
+            ASSERT_EQ(s, from.toString());
+
+            ASSERT_OK(bsonExtractStringField(o, "to", &s));
+            ASSERT_EQ(s, to.toString());
+
+            ASSERT_OK(bsonExtractBooleanField(o, "isDonorShard", &b));
+            ASSERT(b);
+
+            ASSERT_OK(bsonExtractStringField(o, "ns", &s));
+            ASSERT_EQ(s, nss.toString());
+            
+            BSONElement element;
+            ASSERT_OK(bsonExtractTypedField(o, "chunk", Object, &element));
+
+            o = element.Obj();
+
+            ASSERT_BSONOBJ_EQ(o, BSON("min" << min << "max" << max));
+
+            bool did = m.abort(sessionId);
+            ASSERT(did);
+            ASSERT(m.isActive());
+
+        } break;
+        case 1: {
+            m.abortWithoutSessionIdCheck();
+            ASSERT(m.isActive());
+        } break;
+        case 2: {
+            bool did = m.startCommit(sessionId);
+            ASSERT(did);
+        } break; }
     }
 }
 #if 0
