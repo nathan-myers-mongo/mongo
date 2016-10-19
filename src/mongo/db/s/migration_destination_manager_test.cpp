@@ -65,14 +65,40 @@ TEST(MigrationDestinationManager, IsActiveInactive) {
 
 TEST(MigrationDestinationManager, ReportEmpty) {
     MigrationDestinationManager m;
-    BSONObjBuilder b;
-    m.report(b);
-    auto o = b.obj();
-    ASSERT_EQ(o.nFields(), 1);
-    ASSERT(o.hasField("active"));
-    auto e = o["active"];
-    ASSERT(e.isBoolean());
-    ASSERT(e.boolean());
+    BSONObjBuilder builder;
+    m.report(builder);
+    auto result = builder.obj();
+    ASSERT_EQ(result.nFields(), 8);
+
+    bool b;
+    std::string s;
+    BSONElement e;
+
+    ASSERT_OK(bsonExtractBooleanField(result, "active", &b));
+    ASSERT(!b);
+
+    ASSERT_OK(bsonExtractStringField(result, "ns", &s));
+    ASSERT_EQ(s, "");
+
+    ASSERT_OK(bsonExtractStringField(result, "from", &s));
+    ASSERT_EQ(s, "");
+
+    ASSERT_OK(bsonExtractTypedField(result, "min", Object, &e));
+    ASSERT(e.Obj().isEmpty());
+    ASSERT_OK(bsonExtractTypedField(result, "max", Object, &e));
+    ASSERT(e.Obj().isEmpty());
+    ASSERT_OK(bsonExtractTypedField(result, "shardKeyPattern", Object, &e));
+    ASSERT(e.Obj().isEmpty());
+
+    ASSERT_OK(bsonExtractStringField(result, "state", &s));
+    std::cout << '\n' << s << '\n';
+    ASSERT_EQ(s, "READY");
+
+    ASSERT(!result.hasField("errmsg"));
+
+    ASSERT_OK(bsonExtractTypedField(result, "counts", Object, &e));
+    ASSERT_BSONOBJ_EQ(e.Obj(),
+        BSON("cloned" << 0 << "clonedBytes" << 0 << "catchup" << 0 << "steady" << 0));
 }
 
 TEST(MigrationDestinationManager, GetMigrationStatusReportEmpty) {
@@ -122,16 +148,16 @@ TEST(MigrationDestinationManager, Start) {
             std::string s;
             bool b;
 
-            ASSERT_OK(bsonExtractStringField(o, "from", &s));
+            ASSERT_OK(bsonExtractStringField(o, "source", &s));
             ASSERT_EQ(s, from.toString());
 
-            ASSERT_OK(bsonExtractStringField(o, "to", &s));
+            ASSERT_OK(bsonExtractStringField(o, "destination", &s));
             ASSERT_EQ(s, to.toString());
 
             ASSERT_OK(bsonExtractBooleanField(o, "isDonorShard", &b));
             ASSERT(b);
 
-            ASSERT_OK(bsonExtractStringField(o, "ns", &s));
+            ASSERT_OK(bsonExtractStringField(o, "collection", &s));
             ASSERT_EQ(s, nss.toString());
             
             BSONElement element;
