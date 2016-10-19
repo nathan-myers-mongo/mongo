@@ -89,6 +89,8 @@ public:
 
     bool isHashedPattern() const;
 
+    bool hasInRange(const BSONObj& obj, const BSONObj& min, const BSONObj& max) const;
+
     const KeyPattern& getKeyPattern() const;
 
     const BSONObj& toBSON() const;
@@ -227,4 +229,10 @@ private:
 
     const KeyPattern _keyPattern;
 };
+
+bool ShardKeyPattern::hasInRange(const BSONObj& obj, const BSONObj& min, const BSONObj& max) const {
+    BSONObj k = shardKey.extractShardKeyFromDoc(obj);
+    return k.woCompare(min) >= 0 && k.woCompare(max) < 0;
+}
+
 }

@@ -101,15 +101,6 @@ string stateToString(MigrationDestinationManager::State state) {
     }
 }
 
-bool isInRange(const BSONObj& obj,
-               const BSONObj& min,
-               const BSONObj& max,
-               const BSONObj& shardKeyPattern) {
-    ShardKeyPattern shardKey(shardKeyPattern);
-    BSONObj k = shardKey.extractShardKeyFromDoc(obj);
-    return k.woCompare(min) >= 0 && k.woCompare(max) < 0;
-}
-
 /**
  * Checks if an upsert of a remote document will override a local document with the same _id but in
  * a different range on this shard. Must be in WriteContext to avoid races and DBHelper errors.
@@ -126,7 +117,8 @@ bool willOverrideLocalId(OperationContext* txn,
                          BSONObj* localDoc) {
     *localDoc = BSONObj();
     if (Helpers::findById(txn, db, ns.c_str(), remoteDoc, *localDoc)) {
-        return !isInRange(*localDoc, min, max, shardKeyPattern);
+        ShardKeyPattern key(shardKeyPattern);
+        return key.hasInRange(*localDoc, min, max);
     }
 
     return false;
@@ -891,13 +883,10 @@ bool MigrationDestinationManager::_applyMigrateOp(OperationContext* txn,
 
             // do not apply delete if doc does not belong to the chunk being migrated
             BSONObj fullObj;
-            if (Helpers::findById(txn, ctx.db(), ns.c_str(), id, fullObj)) {
-                if (!isInRange(fullObj, min, max, shardKeyPattern)) {
-                    if (MONGO_FAIL_POINT(failMigrationReceivedOutOfRangeOperation)) {
-                        invariant(0);
-                    }
-                    continue;
-                }
+            if (Helpers::findById(txn, ctx.db(), ns.c_str(), id, fullObj) &&
+                    ShardKeyPattern(shardKeyPattern).hasInRange(fullObj, min, max)) {
+                invariant(!MONGO_FAIL_POINT(failMigrationReceivedOutOfRangeOperation));
+                continue;
             }
 
             if (serverGlobalParams.moveParanoia) {
@@ -926,10 +915,9 @@ bool MigrationDestinationManager::_applyMigrateOp(OperationContext* txn,
             BSONObj updatedDoc = i.next().Obj();
 
             // do not apply insert/update if doc does not belong to the chunk being migrated
-            if (!isInRange(updatedDoc, min, max, shardKeyPattern)) {
-                if (MONGO_FAIL_POINT(failMigrationReceivedOutOfRangeOperation)) {
-                    invariant(0);
-                }
+            ShardKeyPattern key(shardKeyPattern);
+            if (!key.hasInRange(updatedDoc, min, max)) {
+                invariant(!MONGO_FAIL_POINT(failMigrationReceivedOutOfRangeOperation);
                 continue;
             }
 

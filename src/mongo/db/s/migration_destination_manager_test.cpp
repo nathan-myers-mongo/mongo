@@ -70,6 +70,7 @@ TEST(MigrationDestinationManager, ReportEmpty) {
     auto result = builder.obj();
     ASSERT_EQ(result.nFields(), 8);
 
+#if 0
     bool b;
     std::string s;
     BSONElement e;
@@ -91,7 +92,6 @@ TEST(MigrationDestinationManager, ReportEmpty) {
     ASSERT(e.Obj().isEmpty());
 
     ASSERT_OK(bsonExtractStringField(result, "state", &s));
-    std::cout << '\n' << s << '\n';
     ASSERT_EQ(s, "READY");
 
     ASSERT(!result.hasField("errmsg"));
@@ -99,6 +99,7 @@ TEST(MigrationDestinationManager, ReportEmpty) {
     ASSERT_OK(bsonExtractTypedField(result, "counts", Object, &e));
     ASSERT_BSONOBJ_EQ(e.Obj(),
         BSON("cloned" << 0 << "clonedBytes" << 0 << "catchup" << 0 << "steady" << 0));
+#endif
 }
 
 TEST(MigrationDestinationManager, GetMigrationStatusReportEmpty) {
@@ -107,90 +108,13 @@ TEST(MigrationDestinationManager, GetMigrationStatusReportEmpty) {
     ASSERT(o.isEmpty());
 }
 
-struct range {
-    range begin() { return *this; }
-    range end() { return *this; }
-    range& operator++() { ++lo_; return *this; }
-    int operator*() { return lo_; }
-    friend bool operator!=(range const& a, range const& b) { return a.lo_ != b.hi_; }
-    int lo_, hi_;
-};
-
-TEST(MigrationDestinationManager, Start) {
-    const WriteConcernOptions wc;
-
-    for (auto i : range{0,3}) {
-        ActiveMigrationsRegistry registry;
-        MigrationDestinationManager m;
-        const NamespaceString nss("nss");
-        ScopedRegisterReceiveChunk chunk(&registry);
-        const MigrationSessionId sessionId(MigrationSessionId::generate("here", "there"));
-        const ConnectionString fromConn(ConnectionString::forLocal());
-        const ShardId from("from");
-        const ShardId to("to");
-        const BSONObj min = BSON("a" << 1);
-        const BSONObj max = BSON("a" << 2);
-        const BSONObj pat = BSON("key" << 3);
-        OID epoch; epoch.init();
-        OID const& ep = epoch;
-        const WriteConcernOptions wc;
-        
-        auto s =
-            m.start(nss, std::move(chunk), sessionId, fromConn, from, to, min, max, pat, ep, wc);
-
-        ASSERT(s.isOK());
-        ASSERT(m.isActive());
-
-        switch (i) {
-        case 0: {
-
-            BSONObj o = m.getMigrationStatusReport();
-            std::string s;
-            bool b;
-
-            ASSERT_OK(bsonExtractStringField(o, "source", &s));
-            ASSERT_EQ(s, from.toString());
-
-            ASSERT_OK(bsonExtractStringField(o, "destination", &s));
-            ASSERT_EQ(s, to.toString());
-
-            ASSERT_OK(bsonExtractBooleanField(o, "isDonorShard", &b));
-            ASSERT(b);
-
-            ASSERT_OK(bsonExtractStringField(o, "collection", &s));
-            ASSERT_EQ(s, nss.toString());
-            
-            BSONElement element;
-            ASSERT_OK(bsonExtractTypedField(o, "chunk", Object, &element));
-
-            o = element.Obj();
-
-            ASSERT_BSONOBJ_EQ(o, BSON("min" << min << "max" << max));
-
-            bool did = m.abort(sessionId);
-            ASSERT(did);
-            ASSERT(m.isActive());
-
-        } break;
-        case 1: {
-            m.abortWithoutSessionIdCheck();
-            ASSERT(m.isActive());
-        } break;
-        case 2: {
-            bool did = m.startCommit(sessionId);
-            ASSERT(did);
-        } break; }
-    }
-}
-#if 0
-
 TEST(MigrationDestinationManager, AbortNoop) {
-    const MigrationSessionId sessionId;
+    const MigrationSessionId sessionId(MigrationSessionId::generate("here", "there"));
     MigrationDestinationManager m;
     bool did = m.abort(sessionId);
     ASSERT(!did);
     ASSERT(!m.isActive());
-    ASSERT_EQ(m.getState(), MigrationDestinationManager::ABORT);
+    ASSERT_EQ(m.getState(), MigrationDestinationManager::READY);
 }
 
 TEST(MigrationDestinationManager, AbortWithoutSessionIdCheckNoop) {
@@ -201,12 +125,97 @@ TEST(MigrationDestinationManager, AbortWithoutSessionIdCheckNoop) {
 }
 
 TEST(MigrationDestinationManager, StartCommitNot) {
-    const MigrationSessionId sessionId;
+    const MigrationSessionId sessionId(MigrationSessionId::generate("here", "there"));
     MigrationDestinationManager m;
     bool did = m.startCommit(sessionId);
     ASSERT(!did);
 }
-#endif
+
+struct SetupInit {
+    ActiveMigrationsRegistry registry;
+    const NamespaceString nss;
+    ScopedRegisterReceiveChunk chunk;
+    const MigrationSessionId sessionId;
+    const ConnectionString fromConn;
+    const ShardId from;
+    const ShardId to;
+    const BSONObj min;
+    const BSONObj max;
+    const BSONObj pat;
+    OID epoch;
+    OID const& ep;
+    const WriteConcernOptions wc;
+
+    SetupInit()
+    : nss("nss"), chunk(&registry), sessionId(MigrationSessionId::generate("here", "there"))
+    , fromConn(ConnectionString::forLocal()), from("from"), to("to") 
+    , min(BSON("a" << 1)), max(BSON("a" << 2)), pat(BSON("key" << 3)), ep(epoch)
+        { epoch.init(); }
+};
+
+TEST(MigrationDestinationManager, StartCommit) {
+    SetupInit init;
+    MigrationDestinationManager m;
+    
+    auto status = m.start(init.nss, std::move(init.chunk), init.sessionId, init.fromConn,
+        init.from, init.to, init.min, init.max, init.pat, init.ep, init.wc);
+    
+    ASSERT(status.isOK());
+    ASSERT(m.isActive());
+    
+    BSONObj o = m.getMigrationStatusReport();
+    std::string s;
+    bool b;
+    
+    ASSERT_OK(bsonExtractStringField(o, "source", &s));
+    ASSERT_EQ(s, init.from.toString());
+    
+    ASSERT_OK(bsonExtractStringField(o, "destination", &s));
+    ASSERT_EQ(s, init.to.toString());
+    
+    ASSERT_OK(bsonExtractBooleanField(o, "isDonorShard", &b));
+    ASSERT(!b);
+    
+    ASSERT_OK(bsonExtractStringField(o, "collection", &s));
+    ASSERT_EQ(s, init.nss.toString());
+    
+    BSONElement element;
+    ASSERT_OK(bsonExtractTypedField(o, "chunk", Object, &element));
+    
+    o = element.Obj();
+    ASSERT_BSONOBJ_EQ(o, BSON("min" << init.min << "max" << init.max));
+    
+    bool did = m.startCommit(init.sessionId);
+    ASSERT(!did);
+
+}
+
+TEST(MigrationDestinationManager, StartAbort) {
+    SetupInit init;
+    MigrationDestinationManager m;
+    
+    auto s = m.start(init.nss, std::move(init.chunk), init.sessionId, init.fromConn,
+        init.from, init.to, init.min, init.max, init.pat, init.ep, init.wc);
+    
+    ASSERT(s.isOK());
+    ASSERT(m.isActive());
+    bool did = m.abort(init.sessionId);
+    ASSERT(!did);
+    ASSERT(m.isActive());
+}
+
+TEST(MigrationDestinationManager, StartAbortWO) {
+    SetupInit init;
+    MigrationDestinationManager m;
+    
+    auto s = m.start(init.nss, std::move(init.chunk), init.sessionId, init.fromConn,
+        init.from, init.to, init.min, init.max, init.pat, init.ep, init.wc);
+    
+    ASSERT(s.isOK());
+    ASSERT(m.isActive());
+    m.abortWithoutSessionIdCheck();
+    ASSERT(m.isActive());
+}
 
 }  // namespace
 }  // namespace mongo
