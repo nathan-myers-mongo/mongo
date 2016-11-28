@@ -56,7 +56,6 @@ namespace mongo {
 namespace {
 
 MONGO_FP_DECLARE(migrationCommitError);
-MONGO_FP_DECLARE(migrationCommitVersionError);
 
 /**
  * This command takes the chunk being migrated ("migratedChunk") and generates a new version for it

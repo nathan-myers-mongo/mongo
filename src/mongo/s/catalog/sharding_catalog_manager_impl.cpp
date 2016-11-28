@@ -1667,7 +1667,7 @@ StatusWith<BSONObj> ShardingCatalogManagerImpl::commitChunkMigration(
     ChunkType  newMigratedChunk = migratedChunk;
     newMigratedChunk.setVersion(
         ChunkVersion(currentMaxVersion.majorVersion() + 1, 0, currentMaxVersion.epoch()));
-    
+
     boost::optional<ChunkType> newControlChunk = boost::none;
     if (controlChunk) {
         newControlChunk = controlChunk.get();
@@ -1683,7 +1683,7 @@ StatusWith<BSONObj> ShardingCatalogManagerImpl::commitChunkMigration(
                 toShard.toString(), fromShard.toString()),
             Shard::RetryPolicy::kIdempotent);
 
-    if (!applyOpsCommandResponse.isOK()) { 
+    if (!applyOpsCommandResponse.isOK()) {
         return applyOpsCommandResponse.getStatus();
     }
     if (!applyOpsCommandResponse.getValue().commandStatus.isOK()) {
