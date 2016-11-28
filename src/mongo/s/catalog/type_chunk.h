@@ -151,6 +151,10 @@ public:
     }
     void setMax(const BSONObj& max);
 
+    const ChunkRange getRange() const {
+        return ChunkRange(getMin(), getMax());
+    }
+
     bool isVersionSet() const {
         return _version.is_initialized();
     }

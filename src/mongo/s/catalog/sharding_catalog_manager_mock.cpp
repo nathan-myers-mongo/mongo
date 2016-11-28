@@ -98,6 +98,16 @@ Status ShardingCatalogManagerMock::commitChunkMerge(OperationContext* txn,
     return {ErrorCodes::InternalError, "Method not implemented"};
 }
 
+StatusWith<BSONObj> ShardingCatalogManagerMock::commitChunkMigration(
+        OperationContext* txn,
+        const NamespaceString&,
+        const ChunkType&,
+        const boost::optional<ChunkType>&,
+        const ShardId&,
+        const ShardId&) {
+    return {ErrorCodes::InternalError, "Method not implemented"};
+}
+
 void ShardingCatalogManagerMock::appendConnectionStats(executor::ConnectionPoolStats* stats) {}
 
 Status ShardingCatalogManagerMock::initializeConfigDatabaseIfNeeded(OperationContext* txn) {
