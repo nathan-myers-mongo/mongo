@@ -53,8 +53,6 @@
 namespace mongo {
 namespace {
 
-MONGO_FP_DECLARE(migrationCommitError);  // delete this in 3.5
-
 /**
  * This command takes the chunk being migrated ("migratedChunk") and generates a new version for it
  * that is written along with its new shard location ("toShard") to the chunks collection. It also
@@ -122,49 +120,6 @@ public:
         return parseNsFullyQualified(dbname, cmdObj);
     }
 
-    /**
-     * Assures that the balancer still holds the collection distributed lock for this collection. If
-     * it no longer does, fail because we don't know if the collection state has changed -- e.g.
-     * whether it was/is dropping, whether another imcompatible migration is running, etc..
-     */
-    static Status checkBalancerHasDistLock(OperationContext* txn,
-                                           const NamespaceString& nss,
-                                           const ChunkType& chunk) {
-        auto balancerDistLockProcessID =
-            Grid::get(txn)->catalogClient(txn)->getDistLockManager()->getProcessID();
-
-        // Must use local read concern because we're going to perform subsequent writes.
-        auto lockQueryResponseWith =
-            Grid::get(txn)->shardRegistry()->getConfigShard()->exhaustiveFindOnConfig(
-                txn,
-                ReadPreferenceSetting{ReadPreference::PrimaryOnly},
-                repl::ReadConcernLevel::kLocalReadConcern,
-                NamespaceString(LocksType::ConfigNS),
-                BSON(LocksType::process(balancerDistLockProcessID) << LocksType::name(nss.ns())),
-                BSONObj(),
-                boost::none);
-        if (!lockQueryResponseWith.isOK()) {
-            return lockQueryResponseWith.getStatus();
-        }
-
-        invariant(lockQueryResponseWith.getValue().docs.size() <= 1);
-
-        if (MONGO_FAIL_POINT(migrationCommitError)) {
-            lockQueryResponseWith.getValue().docs.clear();
-        }
-
-        if (lockQueryResponseWith.getValue().docs.size() != 1) {
-            return Status(
-                ErrorCodes::BalancerLostDistributedLock,
-                str::stream() << "The distributed lock for collection '" << nss.ns()
-                              << "' was lost by the balancer since this migration began. Cannot "
-                              << "proceed with the migration commit for chunk ("
-                              << chunk.getRange().toString()
-                              << ") because it could corrupt other operations.");
-        }
-        return Status::OK();
-    }
-
     bool run(OperationContext* txn,
              const std::string& dbName,
              BSONObj& cmdObj,
@@ -176,13 +131,6 @@ public:
 
         auto commitRequest =
             uassertStatusOK(CommitChunkMigrationRequest::createFromCommand(nss, cmdObj));
-
-        if (!commitRequest.shardHasDistributedLock()) {
-            auto check = checkBalancerHasDistLock(txn, nss, commitRequest.getMigratedChunk());
-            if (!check.isOK()) {
-                return appendCommandStatus(result, check);
-            }
-        }
 
         StatusWith<BSONObj> response = Grid::get(txn)->catalogManager()->commitChunkMigration(
             txn,
