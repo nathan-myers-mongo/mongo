@@ -72,8 +72,7 @@ public:
                                 ChunkVersion chunkVersion,
                                 int64_t maxChunkSizeBytes,
                                 const MigrationSecondaryThrottleOptions& secondaryThrottle,
-                                bool waitForDelete,
-                                bool takeDistLock);
+                                bool waitForDelete);
 
     const NamespaceString& getNss() const {
         return _nss;

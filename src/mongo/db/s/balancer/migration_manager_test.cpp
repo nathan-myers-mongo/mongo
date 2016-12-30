@@ -128,11 +128,9 @@ protected:
      */
     void expectMoveChunkCommand(const ChunkType& chunk,
                                 const ShardId& toShardId,
-                                const bool& takeDistLock,
                                 const BSONObj& response);
     void expectMoveChunkCommand(const ChunkType& chunk,
                                 const ShardId& toShardId,
-                                const bool& takeDistLock,
                                 const Status& returnStatus);
 
     // Random static initialization order can result in X constructor running before Y constructor
@@ -260,7 +258,6 @@ void MigrationManagerTest::checkMigrationsCollectionIsEmptyAndLocksAreUnlocked()
 
 void MigrationManagerTest::expectMoveChunkCommand(const ChunkType& chunk,
                                                   const ShardId& toShardId,
-                                                  const bool& takeDistLock,
                                                   const BSONObj& response) {
     onCommand([&chunk, &toShardId, &takeDistLock, &response](const RemoteCommandRequest& request) {
         NamespaceString nss(request.cmdObj.firstElement().valueStringData());
@@ -276,7 +273,6 @@ void MigrationManagerTest::expectMoveChunkCommand(const ChunkType& chunk,
         ASSERT_EQ(chunk.getShard(), moveChunkRequestWithStatus.getValue().getFromShardId());
 
         ASSERT_EQ(toShardId, moveChunkRequestWithStatus.getValue().getToShardId());
-        ASSERT_EQ(takeDistLock, moveChunkRequestWithStatus.getValue().getTakeDistLock());
 
         return response;
     });
@@ -284,11 +280,10 @@ void MigrationManagerTest::expectMoveChunkCommand(const ChunkType& chunk,
 
 void MigrationManagerTest::expectMoveChunkCommand(const ChunkType& chunk,
                                                   const ShardId& toShardId,
-                                                  const bool& takeDistLock,
                                                   const Status& returnStatus) {
     BSONObjBuilder resultBuilder;
     Command::appendCommandStatus(resultBuilder, returnStatus);
-    expectMoveChunkCommand(chunk, toShardId, takeDistLock, resultBuilder.obj());
+    expectMoveChunkCommand(chunk, toShardId, resultBuilder.obj());
 }
 
 TEST_F(MigrationManagerTest, OneCollectionTwoMigrations) {

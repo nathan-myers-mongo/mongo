@@ -155,8 +155,7 @@ void MoveChunkRequest::appendAsCommand(BSONObjBuilder* builder,
                                        ChunkVersion chunkVersion,
                                        int64_t maxChunkSizeBytes,
                                        const MigrationSecondaryThrottleOptions& secondaryThrottle,
-                                       bool waitForDelete,
-                                       bool takeDistLock) {
+                                       bool waitForDelete) {
     invariant(builder->asTempObj().isEmpty());
     invariant(nss.isValid());
 
@@ -171,7 +170,6 @@ void MoveChunkRequest::appendAsCommand(BSONObjBuilder* builder,
     builder->append(kMaxChunkSizeBytes, static_cast<long long>(maxChunkSizeBytes));
     secondaryThrottle.append(builder);
     builder->append(kWaitForDelete, waitForDelete);
-    builder->append(kTakeDistLock, takeDistLock);
 }
 
 bool MoveChunkRequest::operator==(const MoveChunkRequest& other) const {
