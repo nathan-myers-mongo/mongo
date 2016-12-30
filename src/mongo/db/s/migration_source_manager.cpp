@@ -320,8 +320,7 @@ Status MigrationSourceManager::commitChunkMetadataOnConfig(OperationContext* txn
                                                  _args.getToShardId(),
                                                  migratedChunkType,
                                                  controlChunkType,
-                                                 _collectionMetadata->getCollVersion(),
-                                                 _args.getTakeDistLock());
+                                                 _collectionMetadata->getCollVersion());
 
     builder.append(kWriteConcernField, kMajorityWriteConcern.toBSON());
 

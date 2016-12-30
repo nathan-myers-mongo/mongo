@@ -46,8 +46,6 @@
 #include "mongo/s/client/shard_registry.h"
 #include "mongo/s/grid.h"
 #include "mongo/s/request_types/commit_chunk_migration_request_type.h"
-#include "mongo/util/fail_point.h"
-#include "mongo/util/fail_point_service.h"
 #include "mongo/util/log.h"
 
 namespace mongo {
@@ -76,7 +74,6 @@ namespace {
  *   migratedChunk: {min: <min_value>, max: <max_value>, etc. },
  *   controlChunk: {min: <min_value>, max: <max_value>, etc. },  (optional)
  *   fromShardCollectionVersion: { shardVersionField: <version> }, (for backward compatibility only)
- *   shardHasDistributedLock: true/false (for backward compatibility only)
  * }
  *
  * Returns:
