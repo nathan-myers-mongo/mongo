@@ -118,10 +118,6 @@ public:
         return _waitForDelete;
     }
 
-    bool getTakeDistLock() const {
-        return _takeDistLock;
-    }
-
     /**
      * Returns true if the requests match exactly in terms of the field values and the order of
      * elements within the BSON-typed fields.
@@ -171,9 +167,6 @@ private:
     // Whether to block and wait for the range deleter to cleanup the orphaned documents at the end
     // of move.
     bool _waitForDelete;
-
-    // Whether to take the distributed lock for the collection or not.
-    bool _takeDistLock;
 };
 
 }  // namespace mongo

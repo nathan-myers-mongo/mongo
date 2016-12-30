@@ -60,8 +60,6 @@ typedef std::map<MigrationIdentifier, Status> MigrationStatuses;
 
 /**
  * Manages and executes parallel migrations for the balancer.
- *
- * TODO: for v3.6, remove code making compatible with v3.2 shards that take distlock.
  */
 class MigrationManager {
     MONGO_DISALLOW_COPYING(MigrationManager);

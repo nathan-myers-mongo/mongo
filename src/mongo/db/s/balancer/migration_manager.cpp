@@ -68,19 +68,9 @@ const WriteConcernOptions kMajorityWriteConcern(WriteConcernOptions::kMajority,
 
 /**
  * Parses the 'commandResponse' and converts it to a status to use as the outcome of the command.
- * Preserves backwards compatibility with 3.2 and earlier shards that, rather than use a ChunkTooBig
- * error code, include an extra field in the response.
  */
 Status extractMigrationStatusFromCommandResponse(const BSONObj& commandResponse) {
     Status commandStatus = getStatusFromCommandResult(commandResponse);
-
-    if (!commandStatus.isOK()) {
-        bool chunkTooBig = false;
-        bsonExtractBooleanFieldWithDefault(commandResponse, kChunkTooBig, false, &chunkTooBig);
-        if (chunkTooBig) {
-            commandStatus = {ErrorCodes::ChunkTooBig, commandStatus.reason()};
-        }
-    }
 
     return commandStatus;
 }
@@ -98,14 +88,7 @@ StatusWith<DistLockHandle> acquireDistLock(OperationContext* txn,
             txn, nss.ns(), whyMessage, lockSessionID, DistLockManager::kSingleLockAttemptTimeout);
 
     if (!statusWithDistLockHandle.isOK()) {
-        // If we get LockBusy while trying to acquire the collection distributed lock, this implies
-        // that a concurrent collection operation is running either on a 3.2 shard or on mongos.
-        // Convert it to ConflictingOperationInProgress to better indicate the error.
-        const ErrorCodes::Error code = (statusWithDistLockHandle == ErrorCodes::LockBusy
-                                            ? ErrorCodes::ConflictingOperationInProgress
-                                            : statusWithDistLockHandle.getStatus().code());
-
-        return {code,
+        return {statusWithDistLockHandle.getStatus().code(),
                 stream() << "Could not acquire collection lock for " << nss.ns()
                          << " to migrate chunks, due to "
                          << statusWithDistLockHandle.getStatus().reason()};
@@ -303,10 +286,7 @@ void MigrationManager::startRecoveryAndAcquireDistLocks(OperationContext* txn) {
 
             auto statusWithDistLockHandle = distLockManager->tryLockWithLocalWriteConcern(
                 txn, migrateType.getNss().ns(), whyMessage, _lockSessionID);
-            if (!statusWithDistLockHandle.isOK() &&
-                statusWithDistLockHandle.getStatus() != ErrorCodes::LockBusy) {
-                // LockBusy is alright because that should mean a 3.2 shard has it for the active
-                // migration.
+            if (!statusWithDistLockHandle.isOK()) {
                 log() << "Failed to acquire distributed lock for collection '"
                       << migrateType.getNss().ns()
                       << "' during balancer recovery of an active migration. Abandoning"

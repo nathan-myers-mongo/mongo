@@ -45,7 +45,6 @@ const char kFromShardId[] = "fromShard";
 const char kToShardId[] = "toShard";
 const char kMaxChunkSizeBytes[] = "maxChunkSizeBytes";
 const char kWaitForDelete[] = "waitForDelete";
-const char kTakeDistLock[] = "takeDistLock";
 
 }  // namespace
 
@@ -132,14 +131,6 @@ StatusWith<MoveChunkRequest> MoveChunkRequest::createFromCommand(NamespaceString
         }
 
         request._maxChunkSizeBytes = static_cast<int64_t>(maxChunkSizeBytes);
-    }
-
-    {
-        Status status =
-            bsonExtractBooleanFieldWithDefault(obj, kTakeDistLock, true, &request._takeDistLock);
-        if (!status.isOK()) {
-            return status;
-        }
     }
 
     return request;

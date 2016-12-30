@@ -58,30 +58,6 @@ using std::string;
 namespace {
 
 /**
- * Acquires a distributed lock for the specified collection or throws if lock cannot be acquired.
- */
-DistLockManager::ScopedDistLock acquireCollectionDistLock(OperationContext* txn,
-                                                          const MoveChunkRequest& args) {
-    const string whyMessage(str::stream()
-                            << "migrating chunk "
-                            << ChunkRange(args.getMinKey(), args.getMaxKey()).toString()
-                            << " in "
-                            << args.getNss().ns());
-    auto distLockStatus = Grid::get(txn)->catalogClient(txn)->getDistLockManager()->lock(
-        txn, args.getNss().ns(), whyMessage, DistLockManager::kSingleLockAttemptTimeout);
-    if (!distLockStatus.isOK()) {
-        const string msg = str::stream()
-            << "Could not acquire collection lock for " << args.getNss().ns()
-            << " to migrate chunk [" << redact(args.getMinKey()) << "," << redact(args.getMaxKey())
-            << ") due to " << distLockStatus.getStatus().toString();
-        warning() << msg;
-        uasserted(distLockStatus.getStatus().code(), msg);
-    }
-
-    return std::move(distLockStatus.getValue());
-}
-
-/**
  * If the specified status is not OK logs a warning and throws a DBException corresponding to the
  * specified status.
  */
@@ -182,15 +158,6 @@ public:
             status = scopedRegisterMigration.waitForCompletion(txn);
         }
 
-        if (status == ErrorCodes::ChunkTooBig) {
-            // This code is for compatibility with pre-3.2 balancer, which does not recognize the
-            // ChunkTooBig error code and instead uses the "chunkTooBig" field in the response.
-            // TODO: Remove after 3.4 is released.
-            errmsg = status.reason();
-            result.appendBool("chunkTooBig", true);
-            return false;
-        }
-
         uassertStatusOK(status);
         return true;
     }
@@ -232,12 +199,6 @@ private:
         BSONObj shardKeyPattern;
 
         {
-            // Acquire the collection distributed lock if necessary
-            boost::optional<DistLockManager::ScopedDistLock> scopedCollectionDistLock;
-            if (moveChunkRequest.getTakeDistLock()) {
-                scopedCollectionDistLock = acquireCollectionDistLock(txn, moveChunkRequest);
-            }
-
             MigrationSourceManager migrationSourceManager(
                 txn, moveChunkRequest, donorConnStr, recipientHost);
 
@@ -253,19 +214,6 @@ private:
             uassertStatusOKWithWarning(migrationSourceManager.awaitToCatchUp(txn));
             moveTimingHelper.done(4);
             MONGO_FAIL_POINT_PAUSE_WHILE_SET(moveChunkHangAtStep4);
-
-            // Ensure the distributed lock is still held if this shard owns it.
-            if (moveChunkRequest.getTakeDistLock()) {
-                Status checkDistLockStatus = scopedCollectionDistLock->checkStatus();
-                if (!checkDistLockStatus.isOK()) {
-                    migrationSourceManager.cleanupOnError(txn);
-
-                    uassertStatusOKWithWarning(
-                        {checkDistLockStatus.code(),
-                         str::stream() << "not entering migrate critical section due to "
-                                       << checkDistLockStatus.toString()});
-                }
-            }
 
             uassertStatusOKWithWarning(migrationSourceManager.enterCriticalSection(txn));
             uassertStatusOKWithWarning(migrationSourceManager.commitChunkOnRecipient(txn));
