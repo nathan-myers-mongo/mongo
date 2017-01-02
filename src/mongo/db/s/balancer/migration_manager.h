@@ -216,8 +216,8 @@ private:
      * is only released when all active migrations on the collection have finished.
      */
     void _schedule_inlock(OperationContext* txn,
-                                      const HostAndPort& targetHost,
-                                      Migration migration);
+                          const HostAndPort& targetHost,
+                          Migration migration);
 
     /**
      * Used internally for migrations scheduled with the distributed lock acquired by the config
@@ -226,8 +226,8 @@ private:
      * distributed lock.
      */
     void _complete_inlock(OperationContext* txn,
-                                      MigrationsList::iterator itMigration,
-                                      const executor::RemoteCommandResponse& remoteCommandResponse);
+                          MigrationsList::iterator itMigration,
+                          const executor::RemoteCommandResponse& remoteCommandResponse);
 
     /**
      * If the state of the migration manager is kStopping, checks whether there are any outstanding

@@ -143,12 +143,9 @@ MigrationStatuses MigrationManager::executeMigrationsForAutoBalance(
             scopedMigrationRequests.emplace(migrateInfo.getName(),
                                             std::move(statusWithScopedMigrationRequest.getValue()));
 
-            responses.emplace_back(_schedule(txn,
-                                             migrateInfo,
-                                             maxChunkSizeBytes,
-                                             secondaryThrottle,
-                                             waitForDelete),
-                                   migrateInfo);
+            responses.emplace_back(
+                _schedule(txn, migrateInfo, maxChunkSizeBytes, secondaryThrottle, waitForDelete),
+                migrateInfo);
         }
 
         // Wait for all the scheduled migrations to complete.
@@ -188,12 +185,7 @@ Status MigrationManager::executeManualMigration(
     }
 
     RemoteCommandResponse remoteCommandResponse =
-        _schedule(txn,
-                  migrateInfo,
-                  maxChunkSizeBytes,
-                  secondaryThrottle,
-                  waitForDelete)
-            ->get();
+        _schedule(txn, migrateInfo, maxChunkSizeBytes, secondaryThrottle, waitForDelete)->get();
 
     auto scopedCMStatus = ScopedChunkManager::refreshAndGet(txn, NamespaceString(migrateInfo.ns));
     if (!scopedCMStatus.isOK()) {
@@ -372,11 +364,8 @@ void MigrationManager::finishRecovery(OperationContext* txn,
 
             scheduledMigrations++;
 
-            responses.emplace_back(_schedule(txn,
-                                             migrationInfo,
-                                             maxChunkSizeBytes,
-                                             secondaryThrottle,
-                                             waitForDelete));
+            responses.emplace_back(
+                _schedule(txn, migrationInfo, maxChunkSizeBytes, secondaryThrottle, waitForDelete));
         }
 
         // If no migrations were scheduled for this namespace, free the dist lock
@@ -431,11 +420,7 @@ void MigrationManager::drainActiveMigrations() {
     if (_state == State::kStopped)
         return;
     invariant(_state == State::kStopping);
-
-    _condVar.wait(lock, [this] {
-        return _activeMigrations.empty();
-    });
-
+    _condVar.wait(lock, [this] { return _activeMigrations.empty(); });
     _state = State::kStopped;
 }
 
@@ -526,8 +511,8 @@ shared_ptr<Notification<RemoteCommandResponse>> MigrationManager::_schedule(
 }
 
 void MigrationManager::_schedule_inlock(OperationContext* txn,
-                                                    const HostAndPort& targetHost,
-                                                    Migration migration) {
+                                        const HostAndPort& targetHost,
+                                        Migration migration) {
     executor::TaskExecutor* const executor = Grid::get(txn)->getExecutorPool()->getFixedExecutor();
 
     const NamespaceString nss(migration.nss);
@@ -577,10 +562,9 @@ void MigrationManager::_schedule_inlock(OperationContext* txn,
     _complete_inlock(txn, itMigration, std::move(callbackHandleWithStatus.getStatus()));
 }
 
-void MigrationManager::_complete_inlock(
-    OperationContext* txn,
-    MigrationsList::iterator itMigration,
-    const RemoteCommandResponse& remoteCommandResponse) {
+void MigrationManager::_complete_inlock(OperationContext* txn,
+                                        MigrationsList::iterator itMigration,
+                                        const RemoteCommandResponse& remoteCommandResponse) {
     const NamespaceString nss(itMigration->nss);
 
     // Make sure to signal the notification last, after the distributed lock is freed, so that we
