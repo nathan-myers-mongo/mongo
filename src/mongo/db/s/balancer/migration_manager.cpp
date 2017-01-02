@@ -520,12 +520,12 @@ shared_ptr<Notification<RemoteCommandResponse>> MigrationManager::_schedule(
 
     auto retVal = migration.completionNotification;
 
-    _scheduleWithDistLock_inlock(txn, fromHostStatus.getValue(), std::move(migration));
+    _schedule_inlock(txn, fromHostStatus.getValue(), std::move(migration));
 
     return retVal;
 }
 
-void MigrationManager::_scheduleWithDistLock_inlock(OperationContext* txn,
+void MigrationManager::_schedule_inlock(OperationContext* txn,
                                                     const HostAndPort& targetHost,
                                                     Migration migration) {
     executor::TaskExecutor* const executor = Grid::get(txn)->getExecutorPool()->getFixedExecutor();
@@ -566,7 +566,7 @@ void MigrationManager::_scheduleWithDistLock_inlock(OperationContext* txn,
                 auto txn = cc().makeOperationContext();
 
                 stdx::lock_guard<stdx::mutex> lock(_mutex);
-                _completeWithDistLock_inlock(txn.get(), itMigration, args.response);
+                _complete_inlock(txn.get(), itMigration, args.response);
             });
 
     if (callbackHandleWithStatus.isOK()) {
@@ -574,10 +574,10 @@ void MigrationManager::_scheduleWithDistLock_inlock(OperationContext* txn,
         return;
     }
 
-    _completeWithDistLock_inlock(txn, itMigration, std::move(callbackHandleWithStatus.getStatus()));
+    _complete_inlock(txn, itMigration, std::move(callbackHandleWithStatus.getStatus()));
 }
 
-void MigrationManager::_completeWithDistLock_inlock(
+void MigrationManager::_complete_inlock(
     OperationContext* txn,
     MigrationsList::iterator itMigration,
     const RemoteCommandResponse& remoteCommandResponse) {

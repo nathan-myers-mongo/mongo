@@ -215,7 +215,7 @@ private:
      * The distributed lock is acquired before scheduling the first migration for the collection and
      * is only released when all active migrations on the collection have finished.
      */
-    void _scheduleWithDistLock_inlock(OperationContext* txn,
+    void _schedule_inlock(OperationContext* txn,
                                       const HostAndPort& targetHost,
                                       Migration migration);
 
@@ -225,7 +225,7 @@ private:
      * passed iterator and if this is the last migration for the collection will free the collection
      * distributed lock.
      */
-    void _completeWithDistLock_inlock(OperationContext* txn,
+    void _complete_inlock(OperationContext* txn,
                                       MigrationsList::iterator itMigration,
                                       const executor::RemoteCommandResponse& remoteCommandResponse);
 

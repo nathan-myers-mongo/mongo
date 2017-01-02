@@ -158,6 +158,11 @@ public:
             status = scopedRegisterMigration.waitForCompletion(txn);
         }
 
+        if (status == ErrorCodes::ChunkTooBig) {
+            errmsg = status.reason();
+            return false;
+        }
+
         uassertStatusOK(status);
         return true;
     }
