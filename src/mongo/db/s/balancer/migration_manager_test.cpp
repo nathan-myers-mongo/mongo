@@ -452,7 +452,7 @@ TEST_F(MigrationManagerTest, SourceShardNotFound) {
     future.timed_get(kFutureTimeout);
 }
 
-// Delete in 3.8
+// TODO: Delete in 3.8
 TEST_F(MigrationManagerTest, JumboChunkResponseBackwardsCompatibility) {
     // Set up one shard in the metadata.
     ASSERT_OK(catalogClient()->insertConfigDocument(
