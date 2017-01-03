@@ -45,6 +45,7 @@ const char kFromShardId[] = "fromShard";
 const char kToShardId[] = "toShard";
 const char kMaxChunkSizeBytes[] = "maxChunkSizeBytes";
 const char kWaitForDelete[] = "waitForDelete";
+const char kTakeDistLock[] = "takeDistLock";  // delete in 3.8
 
 }  // namespace
 
@@ -133,6 +134,15 @@ StatusWith<MoveChunkRequest> MoveChunkRequest::createFromCommand(NamespaceString
         request._maxChunkSizeBytes = static_cast<int64_t>(maxChunkSizeBytes);
     }
 
+    { // delete this block in 3.8
+        bool takeDistLock = false;
+        Status status = bsonExtractBooleanFieldWithDefault(obj, kTakeDistLock, true, &takeDistLock);
+        if (status.isOK() && takeDistLock) {
+            return Status{ErrorCodes::IncompatibleShardingConfigVersion,
+                          str::stream() << "Config server is incompatible with this mongod"};
+        }
+    }
+
     return request;
 }
 
@@ -161,6 +171,7 @@ void MoveChunkRequest::appendAsCommand(BSONObjBuilder* builder,
     builder->append(kMaxChunkSizeBytes, static_cast<long long>(maxChunkSizeBytes));
     secondaryThrottle.append(builder);
     builder->append(kWaitForDelete, waitForDelete);
+    builder->append(kTakeDistLock, false);
 }
 
 bool MoveChunkRequest::operator==(const MoveChunkRequest& other) const {
