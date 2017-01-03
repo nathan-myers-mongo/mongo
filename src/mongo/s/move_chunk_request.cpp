@@ -136,7 +136,7 @@ StatusWith<MoveChunkRequest> MoveChunkRequest::createFromCommand(NamespaceString
 
     { // delete this block in 3.8
         bool takeDistLock = false;
-        Status status = bsonExtractBooleanFieldWithDefault(obj, kTakeDistLock, true, &takeDistLock);
+        Status status = bsonExtractBooleanField(obj, kTakeDistLock, &takeDistLock);
         if (status.isOK() && takeDistLock) {
             return Status{ErrorCodes::IncompatibleShardingConfigVersion,
                           str::stream() << "Config server is incompatible with this mongod"};

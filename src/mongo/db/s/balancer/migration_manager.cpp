@@ -61,7 +61,6 @@ using str::stream;
 
 namespace {
 
-const char kChunkTooBig[] = "chunkTooBig";
 const WriteConcernOptions kMajorityWriteConcern(WriteConcernOptions::kMajority,
                                                 WriteConcernOptions::SyncMode::UNSET,
                                                 Seconds(15));
@@ -644,11 +643,7 @@ Status MigrationManager::_processRemoteCommandResponse(
                          << remoteCommandResponse.status.toString()};
     }
 
-    if (!remoteCommandResponse.isOK()) {
-        commandStatus = remoteCommandResponse.status;
-    } else {
-        commandStatus = extractMigrationStatusFromCommandResponse(remoteCommandResponse.data);
-    }
+    commandStatus = remoteCommandResponse.status;
 
     if (!Shard::shouldErrorBePropagated(commandStatus.code())) {
         commandStatus = {ErrorCodes::OperationFailed,
