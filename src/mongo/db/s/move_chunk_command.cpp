@@ -159,8 +159,12 @@ public:
         }
 
         if (status == ErrorCodes::ChunkTooBig) {
-            errmsg = status.reason();
-            return false;
+            // This code is for compatibility with pre-3.2 balancer, which does not recognize the
+            // ChunkTooBig error code and instead uses the "chunkTooBig" field in the response,
+            // and the 3.4 shard, which failed to set the ChunkTooBig status code.
+            // TODO: Remove after 3.6 is released.
+            result.appendBool("chunkTooBig", true);
+            return appendCommandStatus(result, status);
         }
 
         uassertStatusOK(status);

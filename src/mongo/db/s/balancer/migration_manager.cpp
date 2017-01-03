@@ -61,15 +61,28 @@ using str::stream;
 
 namespace {
 
+const char kChunkTooBig[] = "chunkTooBig"; // delete in 3.8
 const WriteConcernOptions kMajorityWriteConcern(WriteConcernOptions::kMajority,
                                                 WriteConcernOptions::SyncMode::UNSET,
                                                 Seconds(15));
 
 /**
  * Parses the 'commandResponse' and converts it to a status to use as the outcome of the command.
+ * Preserves backwards compatibility with 3.4 and earlier shards that, rather than use a ChunkTooBig
+ * error code, include an extra field in the response.
+ *
+ * Delete in 3.8
  */
 Status extractMigrationStatusFromCommandResponse(const BSONObj& commandResponse) {
     Status commandStatus = getStatusFromCommandResult(commandResponse);
+
+    if (!commandStatus.isOK()) {
+        bool chunkTooBig = false;
+        bsonExtractBooleanFieldWithDefault(commandResponse, kChunkTooBig, false, &chunkTooBig);
+        if (chunkTooBig) {
+            commandStatus = {ErrorCodes::ChunkTooBig, commandStatus.reason()};
+        }
+    }
 
     return commandStatus;
 }
@@ -643,7 +656,12 @@ Status MigrationManager::_processRemoteCommandResponse(
                          << remoteCommandResponse.status.toString()};
     }
 
-    commandStatus = remoteCommandResponse.status;
+    if (!remoteCommandResponse.isOK()) {
+        commandStatus = remoteCommandResponse.status;
+    } else {
+        // delete in 3.8
+        commandStatus = extractMigrationStatusFromCommandResponse(remoteCommandResponse.data);
+    }
 
     if (!Shard::shouldErrorBePropagated(commandStatus.code())) {
         commandStatus = {ErrorCodes::OperationFailed,

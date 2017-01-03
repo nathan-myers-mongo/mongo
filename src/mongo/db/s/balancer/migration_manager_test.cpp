@@ -452,6 +452,48 @@ TEST_F(MigrationManagerTest, SourceShardNotFound) {
     future.timed_get(kFutureTimeout);
 }
 
+// Delete in 3.8
+TEST_F(MigrationManagerTest, JumboChunkResponseBackwardsCompatibility) {
+    // Set up one shard in the metadata.
+    ASSERT_OK(catalogClient()->insertConfigDocument(
+        operationContext(), ShardType::ConfigNS, kShard0, kMajorityWriteConcern));
+
+    // Set up the database and collection as sharded in the metadata.
+    std::string dbName = "foo";
+    std::string collName = "foo.bar";
+    ChunkVersion version(2, 0, OID::gen());
+
+    setUpDatabase(dbName, kShardId0);
+    setUpCollection(collName, version);
+
+    // Set up a single chunk in the metadata.
+    ChunkType chunk1 =
+        setUpChunk(collName, kKeyPattern.globalMin(), kKeyPattern.globalMax(), kShardId0, version);
+
+    // Going to request that this chunk gets migrated.
+    const std::vector<MigrateInfo> migrationRequests{{kShardId1, chunk1}};
+
+    auto future = launchAsync([this, chunk1, migrationRequests] {
+        Client::initThreadIfNotAlready("Test");
+        auto txn = cc().makeOperationContext();
+
+        // Scheduling a moveChunk command requires finding a host to which to send the command. Set
+        // up a dummy host for kShardHost0.
+        shardTargeterMock(txn.get(), kShardId0)->setFindHostReturnValue(kShardHost0);
+
+        MigrationStatuses migrationStatuses = _migrationManager->executeMigrationsForAutoBalance(
+            txn.get(), migrationRequests, 0, kDefaultSecondaryThrottle, false);
+
+        ASSERT_EQ(ErrorCodes::ChunkTooBig, migrationStatuses.at(chunk1.getName()));
+    });
+
+    // Expect only one moveChunk command to be called.
+    expectMoveChunkCommand(chunk1, kShardId1, BSON("ok" << 0 << "chunkTooBig" << true));
+
+    // Run the MigrationManager code.
+    future.timed_get(kFutureTimeout);
+}
+
 TEST_F(MigrationManagerTest, InterruptMigration) {
     // Set up one shard in the metadata.
     ASSERT_OK(catalogClient()->insertConfigDocument(
