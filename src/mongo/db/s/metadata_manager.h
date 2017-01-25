@@ -135,14 +135,9 @@ private:
     friend class ScopedCollectionMetadata;
 
     struct CollectionMetadataTracker {
-    public:
-        /**
-         * Creates a new CollectionMetadataTracker, with the usageCounter initialized to zero.
-         */
-        CollectionMetadataTracker(std::unique_ptr<CollectionMetadata> m);
+        CollectionMetadataTracker(std::unique_ptr<CollectionMetadata> p) : metadata(std::move(p)) {}
 
         std::unique_ptr<CollectionMetadata> metadata;
-
         uint32_t usageCounter{0};
     };
 
@@ -233,7 +228,7 @@ public:
      * Creates an empty ScopedCollectionMetadata. Using the default constructor means that no
      * metadata is available.
      */
-    ScopedCollectionMetadata();
+    ScopedCollectionMetadata() = default;
 
     ~ScopedCollectionMetadata();
 

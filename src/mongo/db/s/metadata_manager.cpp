@@ -46,7 +46,7 @@ using CallbackArgs = executor::TaskExecutor::CallbackArgs;
 MetadataManager::MetadataManager(ServiceContext* sc, NamespaceString nss)
     : _nss(std::move(nss)),
       _serviceContext(sc),
-      _activeMetadataTracker(stdx::make_unique<CollectionMetadataTracker>(nullptr)),
+      _activeMetadataTracker{nullptr},
       _receivingChunks(SimpleBSONObjComparator::kInstance.makeBSONObjIndexedMap<CachedChunkInfo>()),
       _rangesToClean(
           SimpleBSONObjComparator::kInstance.makeBSONObjIndexedMap<RangeToCleanDescriptor>()) {}
@@ -269,23 +269,13 @@ void MetadataManager::_setActiveMetadata_inlock(std::unique_ptr<CollectionMetada
 void MetadataManager::_removeMetadata_inlock(CollectionMetadataTracker* metadataTracker) {
     invariant(metadataTracker->usageCounter == 0);
 
-    auto i = _metadataInUse.begin();
-    const auto e = _metadataInUse.end();
-    while (i != e) {
-        if (metadataTracker == i->get()) {
-            _metadataInUse.erase(i);
-            return;
-        }
-
-        ++i;
+    auto const e = _metadataInUse.end();
+    auto const it = std::find_if(_metadataInUse.begin(), e,
+            [=](std::unique_ptr<CollectionMetadataTracker> const& t) { return t.get() == metadataTracker; });
+    if (it != e) {
+        _metadataInUse.erase(it);
     }
 }
-
-MetadataManager::CollectionMetadataTracker::CollectionMetadataTracker(
-    std::unique_ptr<CollectionMetadata> m)
-    : metadata(std::move(m)) {}
-
-ScopedCollectionMetadata::ScopedCollectionMetadata() = default;
 
 // called in lock
 ScopedCollectionMetadata::ScopedCollectionMetadata(
