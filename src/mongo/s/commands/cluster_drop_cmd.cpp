@@ -117,7 +117,7 @@ private:
             // Append the chunk version for the specified namespace indicating that we believe it is
             // not sharded. Collections residing on the config server are never sharded so do not
             // send the shard version.
-            if (shardId != shardRegistry->getConfigShard()->getId()) {
+            if (shardId != shardRegistry->getConfigShard().getId()) {
                 ChunkVersion::UNSHARDED().appendForCommands(&builder);
             }
 
@@ -130,7 +130,7 @@ private:
         }();
 
         const auto shard = uassertStatusOK(shardRegistry->getShard(txn, shardId));
-        auto cmdDropResult = uassertStatusOK(shard->runCommandWithFixedRetryAttempts(
+        auto cmdDropResult = uassertStatusOK(shard.runCommandWithFixedRetryAttempts(
             txn,
             ReadPreferenceSetting{ReadPreference::PrimaryOnly},
             nss.db().toString(),

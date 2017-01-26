@@ -110,7 +110,7 @@ protected:
             // Set the ConnectionString return value on the mock targeter so that later calls to
             // the targeter's getConnString() return the appropriate value.
             auto configTargeter =
-                RemoteCommandTargeterMock::get(shardRegistry()->getConfigShard()->getTargeter());
+                RemoteCommandTargeterMock::get(shardRegistry()->getConfigShard().getTargeter());
             configTargeter->setConnectionStringReturnValue(configConnStr);
             configTargeter->setFindHostReturnValue(configConnStr.getServers()[0]);
 
@@ -889,7 +889,7 @@ TEST_F(ShardingStateTest, MetadataRefreshShouldNotRetryOtherTypesOfError) {
     }
 
     auto configTargeter =
-        RemoteCommandTargeterMock::get(shardRegistry()->getConfigShard()->getTargeter());
+        RemoteCommandTargeterMock::get(shardRegistry()->getConfigShard().getTargeter());
     configTargeter->setFindHostReturnValue({ErrorCodes::HostNotFound, "host erased by test"});
 
     auto status = shardingState()->onStaleShardVersion(

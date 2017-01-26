@@ -36,20 +36,21 @@
 
 namespace mongo {
 
-class ShardLocal : public Shard {
-    MONGO_DISALLOW_COPYING(ShardLocal);
+class Shard::ImplLocal : public Shard::Impl {
+  public:
+    ~ImplLocal() = default;
+  private:
+    friend class ShardFactory;
 
-public:
-    explicit ShardLocal(const ShardId& id);
+    explicit ImplLocal(const ShardId& id);
 
-    ~ShardLocal() = default;
 
     /**
      * These functions are implemented for the Shard interface's sake. They should not be called on
      * ShardLocal because doing so triggers invariants.
      */
-    const ConnectionString getConnString() const override;
-    const ConnectionString originalConnString() const override;
+    ConnectionString getConnString() const override;
+    ConnectionString originalConnString() const override;
     std::shared_ptr<RemoteCommandTargeter> getTargeter() const override;
     void updateReplSetMonitor(const HostAndPort& remoteHost,
                               const Status& remoteCommandStatus) override;
@@ -63,8 +64,7 @@ public:
                                const BSONObj& keys,
                                bool unique) override;
 
-private:
-    Shard::HostWithResponse _runCommand(OperationContext* txn,
+    HostWithResponse _runCommand(OperationContext* txn,
                                         const ReadPreferenceSetting& unused,
                                         const std::string& dbName,
                                         Milliseconds maxTimeMSOverrideUnused,
@@ -103,6 +103,9 @@ private:
     // committed so that readConcern majority reads will read the writes that were performed without
     // a w:majority write concern.
     repl::OpTime _lastOpTime{};
+
+    friend class ShardFactory;
+    friend class Shard;
 };
 
 }  // namespace mongo

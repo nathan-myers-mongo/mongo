@@ -232,7 +232,7 @@ void MigrationManagerTest::setUpMigration(const ChunkType& chunk, const ShardId&
 
 void MigrationManagerTest::checkMigrationsCollectionIsEmptyAndLocksAreUnlocked() {
     auto statusWithMigrationsQueryResponse =
-        shardRegistry()->getConfigShard()->exhaustiveFindOnConfig(
+        shardRegistry()->getConfigShard().exhaustiveFindOnConfig(
             operationContext(),
             ReadPreferenceSetting{ReadPreference::PrimaryOnly},
             repl::ReadConcernLevel::kMajorityReadConcern,
@@ -244,7 +244,7 @@ void MigrationManagerTest::checkMigrationsCollectionIsEmptyAndLocksAreUnlocked()
         uassertStatusOK(statusWithMigrationsQueryResponse);
     ASSERT_EQUALS(0U, migrationsQueryResponse.docs.size());
 
-    auto statusWithLocksQueryResponse = shardRegistry()->getConfigShard()->exhaustiveFindOnConfig(
+    auto statusWithLocksQueryResponse = shardRegistry()->getConfigShard().exhaustiveFindOnConfig(
         operationContext(),
         ReadPreferenceSetting{ReadPreference::PrimaryOnly},
         repl::ReadConcernLevel::kMajorityReadConcern,
@@ -554,7 +554,7 @@ TEST_F(MigrationManagerTest, InterruptMigration) {
     // found in config.migrations (and thus would be recovered if a migration manager were to start
     // up again).
     auto statusWithMigrationsQueryResponse =
-        shardRegistry()->getConfigShard()->exhaustiveFindOnConfig(
+        shardRegistry()->getConfigShard().exhaustiveFindOnConfig(
             operationContext(),
             ReadPreferenceSetting{ReadPreference::PrimaryOnly},
             repl::ReadConcernLevel::kMajorityReadConcern,

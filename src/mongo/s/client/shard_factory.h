@@ -49,31 +49,16 @@ class ShardFactory {
     MONGO_DISALLOW_COPYING(ShardFactory);
 
 public:
-    using BuilderCallable =
-        stdx::function<std::unique_ptr<Shard>(const ShardId&, const ConnectionString&)>;
-    using BuildersMap = std::map<ConnectionString::ConnectionType, BuilderCallable>;
-
-    ShardFactory(BuildersMap&&, std::unique_ptr<RemoteCommandTargeterFactory>);
+    ShardFactory(std::unique_ptr<RemoteCommandTargeterFactory>);
     ~ShardFactory() = default;
-
-    /**
-     * Deprecated. Creates a unique_ptr with a new instance of a Shard with the provided shardId
-     * and connection string. This method is currently only used for addShard.
-     */
-    std::unique_ptr<Shard> createUniqueShard(const ShardId& shardId,
-                                             const ConnectionString& connStr);
 
     /**
      * Creates a shared_ptr with a new instance of a Shard with the provided shardId
      * and connection string.
      */
-    std::shared_ptr<Shard> createShard(const ShardId& shardId, const ConnectionString& connStr);
+    Shard createShard(const ShardId& shardId, const ConnectionString& connStr);
 
 private:
-    // Map from ConnectionType to a function that can be used to build a Shard object for that
-    // ConnectionType. This map must be set up at the initialization of the ShardFactory instance.
-    BuildersMap _builders;
-
     // Even though ShardFactory doesn't use _targeterFactory directly, the functions contained in
     // _builders may, so ShardFactory must own _targeterFactory so that their lifetimes are tied
     // together

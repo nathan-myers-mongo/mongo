@@ -175,7 +175,7 @@ public:
                        str::stream() << "Can't find shard for chunk: " << firstChunk->toString()));
         }
 
-        ShardConnection conn(shardStatus.getValue()->getConnString(), "");
+        ShardConnection conn(shardStatus.getValue().getConnString(), "");
         bool ok = conn->runCommand("admin", remoteCmdObjB.obj(), remoteResult);
         conn.done();
 

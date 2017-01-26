@@ -93,7 +93,7 @@ bool RunOnAllShardsCommand::run(OperationContext* txn,
             continue;
         }
 
-        futures.push_back(Future::spawnCommand(shardStatus.getValue()->getConnString().toString(),
+        futures.push_back(Future::spawnCommand(shardStatus.getValue().getConnString().toString(),
                                                dbName,
                                                cmdObj,
                                                0,

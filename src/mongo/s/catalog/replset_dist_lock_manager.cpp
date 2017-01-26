@@ -325,7 +325,7 @@ StatusWith<DistLockHandle> ReplSetDistLockManager::lockWithSessionID(OperationCo
         }
 
         // If a network error occurred, unlock the lock synchronously and try again
-        if (configShard->isRetriableError(status.code(), Shard::RetryPolicy::kIdempotent) &&
+        if (configShard.isRetriableError(status.code(), Shard::RetryPolicy::kIdempotent) &&
             networkErrorRetries < kMaxNumLockAcquireRetries) {
             LOG(1) << "Failed to acquire distributed lock because of retriable error. Retrying "
                       "acquisition by first unlocking the stale entry, which possibly exists now"

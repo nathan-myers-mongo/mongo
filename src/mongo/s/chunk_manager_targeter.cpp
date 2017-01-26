@@ -182,7 +182,7 @@ CompareResult compareShardVersions(const ChunkVersion& shardVersionA,
 
 ChunkVersion getShardVersion(StringData shardName,
                              const ChunkManager* manager,
-                             const Shard* primary) {
+                             boost::optional<Shard> primary) {
     dassert(!(manager && primary));
     dassert(manager || primary);
 
@@ -205,7 +205,7 @@ ChunkVersion getShardVersion(StringData shardName,
  * ChunkManager or is implicit in the primary shard of the collection.
  */
 CompareResult compareAllShardVersions(const ChunkManager* cachedChunkManager,
-                                      const Shard* cachedPrimary,
+                                      boost::optional<Shard> cachedPrimary,
                                       const map<ShardId, ChunkVersion>& remoteShardVersions) {
     CompareResult finalResult = CompareResult_GTE;
 
@@ -248,9 +248,9 @@ CompareResult compareAllShardVersions(const ChunkManager* cachedChunkManager,
  * Whether or not the manager/primary pair is different from the other manager/primary pair.
  */
 bool isMetadataDifferent(const shared_ptr<ChunkManager>& managerA,
-                         const shared_ptr<Shard>& primaryA,
+                         const boost::optional<Shard>& primaryA,
                          const shared_ptr<ChunkManager>& managerB,
-                         const shared_ptr<Shard>& primaryB) {
+                         const boost::optional<Shard>& primaryB) {
     if ((managerA && !managerB) || (!managerA && managerB) || (primaryA && !primaryB) ||
         (!primaryA && primaryB))
         return true;
@@ -259,7 +259,7 @@ bool isMetadataDifferent(const shared_ptr<ChunkManager>& managerA,
         return !managerA->getVersion().isStrictlyEqualTo(managerB->getVersion());
     }
 
-    dassert(NULL != primaryA.get());
+    dassert(primaryA);
     return primaryA->getId() != primaryB->getId();
 }
 
@@ -268,9 +268,9 @@ bool isMetadataDifferent(const shared_ptr<ChunkManager>& managerA,
 * of the metadata.
 */
 bool wasMetadataRefreshed(const shared_ptr<ChunkManager>& managerA,
-                          const shared_ptr<Shard>& primaryA,
+                          const boost::optional<Shard>& primaryA,
                           const shared_ptr<ChunkManager>& managerB,
-                          const shared_ptr<Shard>& primaryB) {
+                          const boost::optional<Shard>& primaryB) {
     if (isMetadataDifferent(managerA, primaryA, managerB, primaryB))
         return true;
 
@@ -700,7 +700,7 @@ Status ChunkManagerTargeter::refreshIfNeeded(OperationContext* txn, bool* wasCha
     //
 
     shared_ptr<ChunkManager> lastManager = _manager;
-    shared_ptr<Shard> lastPrimary = _primary;
+    boost::optional<Shard> lastPrimary = _primary;
 
     auto dbStatus = ScopedShardDatabase::getOrCreate(txn, _nss.db());
     if (!dbStatus.isOK()) {

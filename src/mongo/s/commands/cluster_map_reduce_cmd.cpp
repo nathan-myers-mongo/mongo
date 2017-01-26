@@ -292,14 +292,14 @@ public:
             const auto shard = uassertStatusOK(
                 Grid::get(txn)->shardRegistry()->getShard(txn, confIn->getPrimaryId()));
 
-            ShardConnection conn(shard->getConnString(), "");
+            ShardConnection conn(shard.getConnString(), "");
 
             BSONObj res;
             bool ok = conn->runCommand(dbname, cmdObj, res);
             conn.done();
 
             if (auto wcErrorElem = res["writeConcernError"]) {
-                appendWriteConcernErrorToCmdResponse(shard->getId(), wcErrorElem, result);
+                appendWriteConcernErrorToCmdResponse(shard.getId(), wcErrorElem, result);
             }
 
             result.appendElementsUnique(res);
@@ -351,7 +351,7 @@ public:
                 {
                     const auto shard = uassertStatusOK(
                         Grid::get(txn)->shardRegistry()->getShard(txn, mrResult.shardTargetId));
-                    server = shard->getConnString().toString();
+                    server = shard.getConnString().toString();
                 }
                 servers.insert(server);
 
@@ -447,9 +447,9 @@ public:
                 Grid::get(txn)->shardRegistry()->getShard(txn, confOut->getPrimaryId()));
 
             LOG(1) << "MR with single shard output, NS=" << outputCollNss.ns()
-                   << " primary=" << shard->toString();
+                   << " primary=" << shard.toString();
 
-            ShardConnection conn(shard->getConnString(), outputCollNss.ns());
+            ShardConnection conn(shard.getConnString(), outputCollNss.ns());
             ok = conn->runCommand(outDB, finalCmd.obj(), singleResult);
 
             BSONObj counts = singleResult.getObjectField("counts");
@@ -460,7 +460,7 @@ public:
             conn.done();
             if (!hasWCError) {
                 if (auto wcErrorElem = singleResult["writeConcernError"]) {
-                    appendWriteConcernErrorToCmdResponse(shard->getId(), wcErrorElem, result);
+                    appendWriteConcernErrorToCmdResponse(shard.getId(), wcErrorElem, result);
                     hasWCError = true;
                 }
             }
@@ -560,7 +560,7 @@ public:
                     {
                         const auto shard = uassertStatusOK(
                             Grid::get(txn)->shardRegistry()->getShard(txn, mrResult.shardTargetId));
-                        server = shard->getConnString().toString();
+                        server = shard.getConnString().toString();
                     }
                     singleResult = mrResult.result;
                     if (!hasWCError) {

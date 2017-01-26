@@ -316,7 +316,7 @@ Status MigrationSourceManager::commitChunkMetadataOnConfig(OperationContext* txn
     builder.append(kWriteConcernField, kMajorityWriteConcern.toBSON());
 
     auto commitChunkMigrationResponse =
-        grid.shardRegistry()->getConfigShard()->runCommandWithFixedRetryAttempts(
+        grid.shardRegistry()->getConfigShard().runCommandWithFixedRetryAttempts(
             txn,
             ReadPreferenceSetting{ReadPreference::PrimaryOnly},
             "admin",

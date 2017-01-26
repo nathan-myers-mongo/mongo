@@ -85,8 +85,6 @@ public:
         kNoRetry,
     };
 
-    virtual ~Shard() = default;
-
     const ShardId getId() const;
 
     /**
@@ -97,7 +95,7 @@ public:
     /**
      * Returns the current connection string for the shard.
      */
-    virtual const ConnectionString getConnString() const = 0;
+    ConnectionString getConnString() const;
 
     /**
      * Returns the connection string that was used to create the Shard from the ShardFactory.  The
@@ -105,14 +103,14 @@ public:
      * NOTE: Chances are this isn't the method you want.  When in doubt, prefer to use
      * getConnString() instead.
      */
-    virtual const ConnectionString originalConnString() const = 0;
+    ConnectionString originalConnString() const;
 
     /**
      * Returns the RemoteCommandTargeter for the hosts in this shard.
      *
      * This is only valid to call on ShardRemote instances.
      */
-    virtual std::shared_ptr<RemoteCommandTargeter> getTargeter() const = 0;
+    std::shared_ptr<RemoteCommandTargeter> getTargeter() const;
 
     /**
      * Notifies the RemoteCommandTargeter owned by the shard of a particular mode of failure for
@@ -120,13 +118,13 @@ public:
      *
      * This is only valid to call on ShardRemote instances.
      */
-    virtual void updateReplSetMonitor(const HostAndPort& remoteHost,
-                                      const Status& remoteCommandStatus) = 0;
+    void updateReplSetMonitor(const HostAndPort& remoteHost,
+                                      const Status& remoteCommandStatus) const;
 
     /**
      * Returns a string description of this shard entry.
      */
-    virtual std::string toString() const = 0;
+    std::string toString() const;
 
     /**
      * Returns whether a server operation which failed with the given error code should be retried
@@ -134,7 +132,7 @@ public:
      * describes whether the operation that generated the given code was idempotent, which affects
      * which codes are safe to retry on.
      */
-    virtual bool isRetriableError(ErrorCodes::Error code, RetryPolicy options) = 0;
+    bool isRetriableError(ErrorCodes::Error code, RetryPolicy options) const;
 
     /**
      * Runs the specified command returns the BSON command response plus parsed out Status of this
@@ -146,7 +144,7 @@ public:
                                            const ReadPreferenceSetting& readPref,
                                            const std::string& dbName,
                                            const BSONObj& cmdObj,
-                                           RetryPolicy retryPolicy);
+                                           RetryPolicy retryPolicy) const;
 
     /**
      * Same as the other variant of runCommand, but allows the operation timeout to be overriden.
@@ -158,7 +156,7 @@ public:
                                            const std::string& dbName,
                                            const BSONObj& cmdObj,
                                            Milliseconds maxTimeMSOverride,
-                                           RetryPolicy retryPolicy);
+                                           RetryPolicy retryPolicy) const;
 
     /**
      * Same as runCommand, but will only retry failed operations up to 3 times, regardless of
@@ -170,7 +168,7 @@ public:
         const ReadPreferenceSetting& readPref,
         const std::string& dbName,
         const BSONObj& cmdObj,
-        RetryPolicy retryPolicy);
+        RetryPolicy retryPolicy) const;
 
     /**
      * Same as runCommand, but will only retry failed operations up to 3 times, regardless of
@@ -183,7 +181,7 @@ public:
         const std::string& dbName,
         const BSONObj& cmdObj,
         Milliseconds maxTimeMSOverride,
-        RetryPolicy retryPolicy);
+        RetryPolicy retryPolicy) const;
 
     /**
      * Expects a single-entry batch wrtie command and runs it on the config server's primary using
@@ -191,7 +189,7 @@ public:
      */
     BatchedCommandResponse runBatchWriteCommandOnConfig(OperationContext* txn,
                                                         const BatchedCommandRequest& batchRequest,
-                                                        RetryPolicy retryPolicy);
+                                                        RetryPolicy retryPolicy) const;
 
     /**
     * Warning: This method exhausts the cursor and pulls all data into memory.
@@ -207,17 +205,18 @@ public:
                                                      const NamespaceString& nss,
                                                      const BSONObj& query,
                                                      const BSONObj& sort,
-                                                     const boost::optional<long long> limit);
+                                                     const boost::optional<long long> limit) const;
+
     /**
      * Builds an index on a config server collection.
      * Creates the collection if it doesn't yet exist.  Does not error if the index already exists,
      * so long as the options are the same.
      * NOTE: Currently only supported for LocalShard.
      */
-    virtual Status createIndexOnConfig(OperationContext* txn,
+    Status createIndexOnConfig(OperationContext* txn,
                                        const NamespaceString& ns,
                                        const BSONObj& keys,
-                                       bool unique) = 0;
+                                       bool unique) const;
 
     // This timeout will be used by default in operations against the config server, unless
     // explicitly overridden
@@ -231,19 +230,58 @@ public:
      */
     static bool shouldErrorBePropagated(ErrorCodes::Error code);
 
-protected:
+    Shard(Shard const&) = default;
+    Shard(Shard&&) = default;
+    Shard& operator=(Shard const&) = default;
+    Shard& operator=(Shard&&) = default;
+
+    class ImplRemote;
+    class ImplLocal;
+private:
+    class Impl;
+    explicit Shard(std::shared_ptr<Impl> impl)
+        : _impl(std::move(impl)) { invariant(_impl.get() != nullptr); }
+    Shard() = delete;
+
+    friend class ShardFactory;
+    std::shared_ptr<Impl> _impl;
+};
+
+class Shard::Impl {
+    Impl(ShardId id) : _id(id) {}
+public:
+    virtual ~Impl() = default;
+
+    friend class Shard::ImplRemote;
+    friend class Shard::ImplLocal;
+    friend class Shard;
+
+    using CommandResponse = Shard::CommandResponse;
+    using QueryResponse = Shard::QueryResponse;
+    using RetryPolicy = Shard::RetryPolicy;
+
+    const ShardId getId() const;
+    bool isConfig() const;
+    virtual ConnectionString getConnString() const = 0;
+    virtual ConnectionString originalConnString() const = 0;
+    virtual std::shared_ptr<RemoteCommandTargeter> getTargeter() const = 0;
+    virtual void updateReplSetMonitor(const HostAndPort& remoteHost,
+                                      const Status& remoteCommandStatus) = 0;
+    virtual std::string toString() const = 0;
+    virtual bool isRetriableError(ErrorCodes::Error code, RetryPolicy options) = 0;
+    virtual Status createIndexOnConfig(OperationContext* txn,
+                                        const NamespaceString& ns,
+                                        const BSONObj& keys,
+                                        bool unique) = 0;
+
     struct HostWithResponse {
         HostWithResponse(boost::optional<HostAndPort> _host,
                          StatusWith<CommandResponse> _commandResponse)
             : host(std::move(_host)), commandResponse(std::move(_commandResponse)) {}
-
         boost::optional<HostAndPort> host;
         StatusWith<CommandResponse> commandResponse;
     };
 
-    Shard(const ShardId& id);
-
-private:
     /**
      * Runs the specified command against the shard backed by this object with a timeout set to the
      * minimum of maxTimeMSOverride or the timeout of the OperationContext.
@@ -272,5 +310,24 @@ private:
      */
     const ShardId _id;
 };
+
+inline std::string Shard::toString() const { return _impl->toString(); }
+inline const ShardId Shard::getId() const { return _impl->getId(); }
+inline bool Shard::isConfig() const { return _impl->isConfig(); }
+inline ConnectionString Shard::getConnString() const { return _impl->getConnString(); }
+inline ConnectionString Shard::originalConnString() const
+    { return _impl->originalConnString(); }
+inline std::shared_ptr<RemoteCommandTargeter> Shard::getTargeter() const
+    { return _impl->getTargeter(); }
+inline void Shard::updateReplSetMonitor(const HostAndPort& remoteHost,
+                                 const Status& remoteCommandStatus) const
+    { return _impl->updateReplSetMonitor(remoteHost, remoteCommandStatus); }
+ inline bool Shard::isRetriableError(ErrorCodes::Error code, RetryPolicy options) const
+    { return _impl->isRetriableError(code, options); }
+ inline Status Shard::createIndexOnConfig(OperationContext* txn,
+                            const NamespaceString& ns,
+                            const BSONObj& keys,
+                            bool unique) const
+    { return _impl->createIndexOnConfig(txn, ns, keys, unique); }
 
 }  // namespace mongo

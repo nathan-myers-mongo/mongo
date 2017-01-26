@@ -108,7 +108,7 @@ public:
 
     ShardId shardFor(OperationContext* txn, const ShardId& shardId) const final {
         const auto shard = uassertStatusOK(grid.shardRegistry()->getShard(txn, shardId));
-        return shard->getId();
+        return shard.getId();
     }
 
 private:
@@ -378,7 +378,7 @@ void ChunkManager::calcInitSplitsAndShards(OperationContext* txn,
         auto primaryShard = uassertStatusOK(grid.shardRegistry()->getShard(txn, primaryShardId));
         const NamespaceString nss{getns()};
 
-        auto result = uassertStatusOK(primaryShard->runCommandWithFixedRetryAttempts(
+        auto result = uassertStatusOK(primaryShard.runCommandWithFixedRetryAttempts(
             txn,
             ReadPreferenceSetting{ReadPreference::PrimaryPreferred},
             nss.db().toString(),

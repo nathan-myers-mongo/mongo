@@ -181,12 +181,12 @@ private:
 
         const auto donorConnStr =
             uassertStatusOK(shardRegistry->getShard(txn, moveChunkRequest.getFromShardId()))
-                ->getConnString();
+                .getConnString();
         const auto recipientHost = uassertStatusOK([&] {
             auto recipientShard =
                 uassertStatusOK(shardRegistry->getShard(txn, moveChunkRequest.getToShardId()));
 
-            return recipientShard->getTargeter()->findHostNoWait(
+            return recipientShard.getTargeter()->findHostNoWait(
                 ReadPreferenceSetting{ReadPreference::PrimaryOnly});
         }());
 

@@ -199,7 +199,7 @@ Status DistLockCatalogImpl::ping(OperationContext* txn, StringData processID, Da
     request.setUpsert(true);
     request.setWriteConcern(kMajorityWriteConcern);
 
-    auto resultStatus = _client->getConfigShard()->runCommandWithFixedRetryAttempts(
+    auto resultStatus = _client->getConfigShard().runCommandWithFixedRetryAttempts(
         txn,
         ReadPreferenceSetting{ReadPreference::PrimaryOnly},
         _locksNS.db().toString(),
@@ -236,7 +236,7 @@ StatusWith<LocksType> DistLockCatalogImpl::grabLock(OperationContext* txn,
     request.setShouldReturnNew(true);
     request.setWriteConcern(writeConcern);
 
-    auto resultStatus = _client->getConfigShard()->runCommandWithFixedRetryAttempts(
+    auto resultStatus = _client->getConfigShard().runCommandWithFixedRetryAttempts(
         txn,
         ReadPreferenceSetting{ReadPreference::PrimaryOnly},
         _locksNS.db().toString(),
@@ -293,7 +293,7 @@ StatusWith<LocksType> DistLockCatalogImpl::overtakeLock(OperationContext* txn,
     request.setShouldReturnNew(true);
     request.setWriteConcern(kMajorityWriteConcern);
 
-    auto resultStatus = _client->getConfigShard()->runCommandWithFixedRetryAttempts(
+    auto resultStatus = _client->getConfigShard().runCommandWithFixedRetryAttempts(
         txn,
         ReadPreferenceSetting{ReadPreference::PrimaryOnly},
         _locksNS.db().toString(),
@@ -338,7 +338,7 @@ Status DistLockCatalogImpl::unlock(OperationContext* txn,
 }
 
 Status DistLockCatalogImpl::_unlock(OperationContext* txn, const FindAndModifyRequest& request) {
-    auto resultStatus = _client->getConfigShard()->runCommandWithFixedRetryAttempts(
+    auto resultStatus = _client->getConfigShard().runCommandWithFixedRetryAttempts(
         txn,
         ReadPreferenceSetting{ReadPreference::PrimaryOnly},
         _locksNS.db().toString(),
@@ -373,7 +373,7 @@ Status DistLockCatalogImpl::unlockAll(OperationContext* txn, const std::string& 
 
     BSONObj cmdObj = request.toBSON();
 
-    auto response = _client->getConfigShard()->runCommandWithFixedRetryAttempts(
+    auto response = _client->getConfigShard().runCommandWithFixedRetryAttempts(
         txn,
         ReadPreferenceSetting{ReadPreference::PrimaryOnly},
         _locksNS.db().toString(),
@@ -404,7 +404,7 @@ Status DistLockCatalogImpl::unlockAll(OperationContext* txn, const std::string& 
 }
 
 StatusWith<DistLockCatalog::ServerInfo> DistLockCatalogImpl::getServerInfo(OperationContext* txn) {
-    auto resultStatus = _client->getConfigShard()->runCommandWithFixedRetryAttempts(
+    auto resultStatus = _client->getConfigShard().runCommandWithFixedRetryAttempts(
         txn,
         kReadPref,
         "admin",
@@ -496,7 +496,7 @@ Status DistLockCatalogImpl::stopPing(OperationContext* txn, StringData processId
         FindAndModifyRequest::makeRemove(_lockPingNS, BSON(LockpingsType::process() << processId));
     request.setWriteConcern(kMajorityWriteConcern);
 
-    auto resultStatus = _client->getConfigShard()->runCommandWithFixedRetryAttempts(
+    auto resultStatus = _client->getConfigShard().runCommandWithFixedRetryAttempts(
         txn,
         ReadPreferenceSetting{ReadPreference::PrimaryOnly},
         _locksNS.db().toString(),
@@ -515,7 +515,7 @@ StatusWith<vector<BSONObj>> DistLockCatalogImpl::_findOnConfig(
     const BSONObj& query,
     const BSONObj& sort,
     boost::optional<long long> limit) {
-    auto result = _client->getConfigShard()->exhaustiveFindOnConfig(
+    auto result = _client->getConfigShard().exhaustiveFindOnConfig(
         txn, readPref, repl::ReadConcernLevel::kMajorityReadConcern, nss, query, sort, limit);
     if (!result.isOK()) {
         return result.getStatus();

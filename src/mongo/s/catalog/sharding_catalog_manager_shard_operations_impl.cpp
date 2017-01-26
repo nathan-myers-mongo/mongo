@@ -89,7 +89,7 @@ StatusWith<std::string> generateNewShardName(OperationContext* txn) {
     BSONObjBuilder shardNameRegex;
     shardNameRegex.appendRegex(ShardType::name(), "^shard");
 
-    auto findStatus = Grid::get(txn)->shardRegistry()->getConfigShard()->exhaustiveFindOnConfig(
+    auto findStatus = Grid::get(txn)->shardRegistry()->getConfigShard().exhaustiveFindOnConfig(
         txn,
         kConfigReadSelector,
         repl::ReadConcernLevel::kMajorityReadConcern,
@@ -551,10 +551,8 @@ StatusWith<std::string> ShardingCatalogManagerImpl::addShard(
     }
 
     // TODO: Don't create a detached Shard object, create a detached RemoteCommandTargeter instead.
-    const std::shared_ptr<Shard> shard{
-        Grid::get(txn)->shardRegistry()->createConnection(shardConnectionString)};
-    invariant(shard);
-    auto targeter = shard->getTargeter();
+    const Shard shard{Grid::get(txn)->shardRegistry()->createConnection(shardConnectionString)};
+    auto targeter = shard.getTargeter();
 
     auto stopMonitoringGuard = MakeGuard([&] {
         if (shardConnectionString.type() == ConnectionString::SET) {
@@ -727,7 +725,7 @@ Status ShardingCatalogManagerImpl::initializeShardingAwarenessOnUnawareShards(
 StatusWith<std::vector<ShardType>> ShardingCatalogManagerImpl::_getAllShardingUnawareShards(
     OperationContext* txn) {
     std::vector<ShardType> shards;
-    auto findStatus = Grid::get(txn)->shardRegistry()->getConfigShard()->exhaustiveFindOnConfig(
+    auto findStatus = Grid::get(txn)->shardRegistry()->getConfigShard().exhaustiveFindOnConfig(
         txn,
         ReadPreferenceSetting{ReadPreference::PrimaryOnly},
         repl::ReadConcernLevel::kLocalReadConcern,
@@ -774,10 +772,8 @@ Status ShardingCatalogManagerImpl::upsertShardIdentityOnShard(OperationContext* 
 
     // TODO: Don't create a detached Shard object, create a detached RemoteCommandTargeter
     // instead.
-    const std::shared_ptr<Shard> shard{
-        Grid::get(txn)->shardRegistry()->createConnection(swConnString.getValue())};
-    invariant(shard);
-    auto targeter = shard->getTargeter();
+    const Shard shard{Grid::get(txn)->shardRegistry()->createConnection(swConnString.getValue())};
+    auto targeter = shard.getTargeter();
 
     _scheduleAddShardTask(
         std::move(shardType), std::move(targeter), std::move(commandRequest), false);

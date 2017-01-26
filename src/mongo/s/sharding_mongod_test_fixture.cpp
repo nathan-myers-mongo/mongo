@@ -175,37 +175,7 @@ std::unique_ptr<executor::TaskExecutorPool> ShardingMongodTestFixture::makeTaskE
 std::unique_ptr<ShardRegistry> ShardingMongodTestFixture::makeShardRegistry(
     ConnectionString configConnStr) {
     auto targeterFactory(stdx::make_unique<RemoteCommandTargeterFactoryMock>());
-    auto targeterFactoryPtr = targeterFactory.get();
-    _targeterFactory = targeterFactoryPtr;
-
-    ShardFactory::BuilderCallable setBuilder =
-        [targeterFactoryPtr](const ShardId& shardId, const ConnectionString& connStr) {
-            return stdx::make_unique<ShardRemote>(
-                shardId, connStr, targeterFactoryPtr->create(connStr));
-        };
-
-    ShardFactory::BuilderCallable masterBuilder =
-        [targeterFactoryPtr](const ShardId& shardId, const ConnectionString& connStr) {
-            return stdx::make_unique<ShardRemote>(
-                shardId, connStr, targeterFactoryPtr->create(connStr));
-        };
-
-    ShardFactory::BuildersMap buildersMap{{ConnectionString::SET, std::move(setBuilder)},
-                                          {ConnectionString::MASTER, std::move(masterBuilder)}};
-
-    // Only config servers use ShardLocal for now.
-    if (serverGlobalParams.clusterRole == ClusterRole::ConfigServer) {
-        ShardFactory::BuilderCallable localBuilder = [](const ShardId& shardId,
-                                                        const ConnectionString& connStr) {
-            return stdx::make_unique<ShardLocal>(shardId);
-        };
-        buildersMap.insert(
-            std::pair<ConnectionString::ConnectionType, ShardFactory::BuilderCallable>(
-                ConnectionString::LOCAL, std::move(localBuilder)));
-    }
-
-    auto shardFactory =
-        stdx::make_unique<ShardFactory>(std::move(buildersMap), std::move(targeterFactory));
+    auto shardFactory = stdx::make_unique<ShardFactory>(std::move(targeterFactory));
 
     return stdx::make_unique<ShardRegistry>(std::move(shardFactory), configConnStr);
 }

@@ -31,6 +31,8 @@
 
 #include "mongo/platform/basic.h"
 
+#include "mongo/s/client/shard_local.h"
+#include "mongo/s/client/shard_remote.h"
 #include "mongo/s/client/shard_factory.h"
 
 #include "mongo/base/status_with.h"
@@ -42,21 +44,16 @@
 
 namespace mongo {
 
-ShardFactory::ShardFactory(BuildersMap&& builders,
-                           std::unique_ptr<RemoteCommandTargeterFactory> targeterFactory)
-    : _builders(builders), _targeterFactory(std::move(targeterFactory)) {}
+ShardFactory::ShardFactory(std::unique_ptr<RemoteCommandTargeterFactory> targeterFactory)
+    : _targeterFactory(std::move(targeterFactory)) { }
 
-std::unique_ptr<Shard> ShardFactory::createUniqueShard(const ShardId& shardId,
-                                                       const ConnectionString& connStr) {
-    auto builderIt = _builders.find(connStr.type());
-    invariant(builderIt != _builders.end());
-    return builderIt->second(shardId, connStr);
+Shard ShardFactory::createShard(const ShardId& shardId,
+                                const ConnectionString& connStr) {
+    if (connStr.type() == ConnectionString::LOCAL)
+        return Shard{std::shared_ptr<Shard::Impl>{new Shard::ImplLocal{shardId}}};
+    else
+        return Shard{std::shared_ptr<Shard::Impl>{
+            new Shard::ImplRemote{shardId, connStr, _targeterFactory->create(connStr)}}};
 }
 
-std::shared_ptr<Shard> ShardFactory::createShard(const ShardId& shardId,
-                                                 const ConnectionString& connStr) {
-    auto builderIt = _builders.find(connStr.type());
-    invariant(builderIt != _builders.end());
-    return std::shared_ptr<Shard>(builderIt->second(shardId, connStr));
-}
 }  // namespace mongo

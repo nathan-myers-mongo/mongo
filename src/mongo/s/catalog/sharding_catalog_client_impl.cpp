@@ -452,7 +452,7 @@ Status ShardingCatalogClientImpl::shardCollection(OperationContext* txn,
         BSONObjBuilder collectionDetail;
         collectionDetail.append("shardKey", fieldsAndOrder.toBSON());
         collectionDetail.append("collection", ns);
-        collectionDetail.append("primary", primaryShardStatus.getValue()->toString());
+        collectionDetail.append("primary", primaryShardStatus.getValue().toString());
 
         {
             BSONArrayBuilder initialShards(collectionDetail.subarrayStart("initShards"));
@@ -516,7 +516,7 @@ Status ShardingCatalogClientImpl::shardCollection(OperationContext* txn,
     SetShardVersionRequest ssv = SetShardVersionRequest::makeForVersioningNoPersist(
         grid.shardRegistry()->getConfigServerConnectionString(),
         dbPrimaryShardId,
-        primaryShardStatus.getValue()->getConnString(),
+        primaryShardStatus.getValue().getConnString(),
         NamespaceString(ns),
         manager->getVersion(),
         true);
@@ -528,7 +528,7 @@ Status ShardingCatalogClientImpl::shardCollection(OperationContext* txn,
     auto shard = shardStatus.getValue();
 
     auto ssvResponse =
-        shard->runCommandWithFixedRetryAttempts(txn,
+        shard.runCommandWithFixedRetryAttempts(txn,
                                                 ReadPreferenceSetting{ReadPreference::PrimaryOnly},
                                                 "admin",
                                                 ssv.toBSON(),
@@ -835,7 +835,7 @@ Status ShardingCatalogClientImpl::dropCollection(OperationContext* txn, const Na
         if (!shardStatus.isOK()) {
             return shardStatus.getStatus();
         }
-        auto dropResult = shardStatus.getValue()->runCommandWithFixedRetryAttempts(
+        auto dropResult = shardStatus.getValue().runCommandWithFixedRetryAttempts(
             txn,
             ReadPreferenceSetting{ReadPreference::PrimaryOnly},
             ns.db().toString(),
@@ -923,7 +923,7 @@ Status ShardingCatalogClientImpl::dropCollection(OperationContext* txn, const Na
         }
         auto shard = shardStatus.getValue();
 
-        auto ssvResult = shard->runCommandWithFixedRetryAttempts(
+        auto ssvResult = shard.runCommandWithFixedRetryAttempts(
             txn,
             ReadPreferenceSetting{ReadPreference::PrimaryOnly},
             "admin",
@@ -939,7 +939,7 @@ Status ShardingCatalogClientImpl::dropCollection(OperationContext* txn, const Na
             return ssvStatus;
         }
 
-        auto unsetShardingStatus = shard->runCommandWithFixedRetryAttempts(
+        auto unsetShardingStatus = shard.runCommandWithFixedRetryAttempts(
             txn,
             ReadPreferenceSetting{ReadPreference::PrimaryOnly},
             "admin",
@@ -992,7 +992,7 @@ StatusWith<BSONObj> ShardingCatalogClientImpl::getGlobalSettings(OperationContex
 
 StatusWith<VersionType> ShardingCatalogClientImpl::getConfigVersion(
     OperationContext* txn, repl::ReadConcernLevel readConcern) {
-    auto findStatus = Grid::get(txn)->shardRegistry()->getConfigShard()->exhaustiveFindOnConfig(
+    auto findStatus = Grid::get(txn)->shardRegistry()->getConfigShard().exhaustiveFindOnConfig(
         txn,
         kConfigReadSelector,
         readConcern,
@@ -1236,7 +1236,7 @@ bool ShardingCatalogClientImpl::runUserManagementWriteCommand(OperationContext* 
     }
 
     auto response =
-        Grid::get(txn)->shardRegistry()->getConfigShard()->runCommandWithFixedRetryAttempts(
+        Grid::get(txn)->shardRegistry()->getConfigShard().runCommandWithFixedRetryAttempts(
             txn,
             ReadPreferenceSetting{ReadPreference::PrimaryOnly},
             dbname,
@@ -1267,7 +1267,7 @@ bool ShardingCatalogClientImpl::runReadCommandForTest(OperationContext* txn,
     _appendReadConcern(&cmdBuilder);
 
     auto resultStatus =
-        Grid::get(txn)->shardRegistry()->getConfigShard()->runCommandWithFixedRetryAttempts(
+        Grid::get(txn)->shardRegistry()->getConfigShard().runCommandWithFixedRetryAttempts(
             txn, kConfigReadSelector, dbname, cmdBuilder.done(), Shard::RetryPolicy::kIdempotent);
     if (resultStatus.isOK()) {
         result->appendElements(resultStatus.getValue().response);
@@ -1282,7 +1282,7 @@ bool ShardingCatalogClientImpl::runUserManagementReadCommand(OperationContext* t
                                                              const BSONObj& cmdObj,
                                                              BSONObjBuilder* result) {
     auto resultStatus =
-        Grid::get(txn)->shardRegistry()->getConfigShard()->runCommandWithFixedRetryAttempts(
+        Grid::get(txn)->shardRegistry()->getConfigShard().runCommandWithFixedRetryAttempts(
             txn,
             kConfigPrimaryPreferredSelector,
             dbname,
@@ -1312,7 +1312,7 @@ Status ShardingCatalogClientImpl::applyChunkOpsDeprecated(OperationContext* txn,
                                   << writeConcern.toBSON());
 
     auto response =
-        Grid::get(txn)->shardRegistry()->getConfigShard()->runCommandWithFixedRetryAttempts(
+        Grid::get(txn)->shardRegistry()->getConfigShard().runCommandWithFixedRetryAttempts(
             txn,
             ReadPreferenceSetting{ReadPreference::PrimaryOnly},
             "config",
@@ -1397,7 +1397,7 @@ void ShardingCatalogClientImpl::writeConfigServerDirect(OperationContext* txn,
     }
 
     auto configShard = Grid::get(txn)->shardRegistry()->getConfigShard();
-    *batchResponse = configShard->runBatchWriteCommandOnConfig(
+    *batchResponse = configShard.runBatchWriteCommandOnConfig(
         txn, batchRequest, Shard::RetryPolicy::kNotIdempotent);
 }
 
@@ -1421,12 +1421,12 @@ Status ShardingCatalogClientImpl::insertConfigDocument(OperationContext* txn,
     auto configShard = Grid::get(txn)->shardRegistry()->getConfigShard();
     for (int retry = 1; retry <= kMaxWriteRetry; retry++) {
         auto response =
-            configShard->runBatchWriteCommandOnConfig(txn, request, Shard::RetryPolicy::kNoRetry);
+            configShard.runBatchWriteCommandOnConfig(txn, request, Shard::RetryPolicy::kNoRetry);
 
         Status status = response.toStatus();
 
         if (retry < kMaxWriteRetry &&
-            configShard->isRetriableError(status.code(), Shard::RetryPolicy::kIdempotent)) {
+            configShard.isRetriableError(status.code(), Shard::RetryPolicy::kIdempotent)) {
             // Pretend like the operation is idempotent because we're handling DuplicateKey errors
             // specially
             continue;
@@ -1504,7 +1504,7 @@ StatusWith<bool> ShardingCatalogClientImpl::updateConfigDocument(
 
     auto configShard = Grid::get(txn)->shardRegistry()->getConfigShard();
     auto response =
-        configShard->runBatchWriteCommandOnConfig(txn, request, Shard::RetryPolicy::kIdempotent);
+        configShard.runBatchWriteCommandOnConfig(txn, request, Shard::RetryPolicy::kIdempotent);
 
     Status status = response.toStatus();
     if (!status.isOK()) {
@@ -1536,7 +1536,7 @@ Status ShardingCatalogClientImpl::removeConfigDocuments(OperationContext* txn,
 
     auto configShard = Grid::get(txn)->shardRegistry()->getConfigShard();
     auto response =
-        configShard->runBatchWriteCommandOnConfig(txn, request, Shard::RetryPolicy::kIdempotent);
+        configShard.runBatchWriteCommandOnConfig(txn, request, Shard::RetryPolicy::kIdempotent);
 
     return response.toStatus();
 }
@@ -1598,7 +1598,7 @@ Status ShardingCatalogClientImpl::_createCappedConfigCollection(
                                       << writeConcern.toBSON());
 
     auto result =
-        Grid::get(txn)->shardRegistry()->getConfigShard()->runCommandWithFixedRetryAttempts(
+        Grid::get(txn)->shardRegistry()->getConfigShard().runCommandWithFixedRetryAttempts(
             txn,
             ReadPreferenceSetting{ReadPreference::PrimaryOnly},
             "config",
@@ -1635,7 +1635,7 @@ StatusWith<long long> ShardingCatalogClientImpl::_runCountCommandOnConfig(Operat
 
     auto configShard = Grid::get(txn)->shardRegistry()->getConfigShard();
     auto resultStatus =
-        configShard->runCommandWithFixedRetryAttempts(txn,
+        configShard.runCommandWithFixedRetryAttempts(txn,
                                                       kConfigReadSelector,
                                                       ns.db().toString(),
                                                       countBuilder.done(),
@@ -1667,7 +1667,7 @@ StatusWith<repl::OpTimeWith<vector<BSONObj>>> ShardingCatalogClientImpl::_exhaus
     const BSONObj& query,
     const BSONObj& sort,
     boost::optional<long long> limit) {
-    auto response = Grid::get(txn)->shardRegistry()->getConfigShard()->exhaustiveFindOnConfig(
+    auto response = Grid::get(txn)->shardRegistry()->getConfigShard().exhaustiveFindOnConfig(
         txn, readPref, readConcern, nss, query, sort, limit);
     if (!response.isOK()) {
         return response.getStatus();
@@ -1687,7 +1687,7 @@ Status ShardingCatalogClientImpl::appendInfoForConfigServerDatabases(
     OperationContext* txn, const BSONObj& listDatabasesCmd, BSONArrayBuilder* builder) {
     auto configShard = Grid::get(txn)->shardRegistry()->getConfigShard();
     auto resultStatus =
-        configShard->runCommandWithFixedRetryAttempts(txn,
+        configShard.runCommandWithFixedRetryAttempts(txn,
                                                       kConfigPrimaryPreferredSelector,
                                                       "admin",
                                                       listDatabasesCmd,

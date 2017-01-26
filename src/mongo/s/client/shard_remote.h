@@ -40,22 +40,21 @@ namespace mongo {
  * Maintains the targeting and command execution logic for a single shard. Performs polling of
  * the shard (if replica set).
  */
-class ShardRemote : public Shard {
-    MONGO_DISALLOW_COPYING(ShardRemote);
-
-public:
+class Shard::ImplRemote : public Shard::Impl {
+  public:
+    ~ImplRemote() override;
+  private:
     /**
      * Instantiates a new shard connection management object for the specified shard.
      */
-    ShardRemote(const ShardId& id,
-                const ConnectionString& originalConnString,
-                std::unique_ptr<RemoteCommandTargeter> targeter);
+    explicit ImplRemote(const ShardId& id,
+                        const ConnectionString& originalConnString,
+                        std::unique_ptr<RemoteCommandTargeter> targeter);
 
-    ~ShardRemote();
 
-    const ConnectionString getConnString() const override;
+    ConnectionString getConnString() const override;
 
-    const ConnectionString originalConnString() const override {
+    ConnectionString originalConnString() const override {
         return _originalConnString;
     }
 
@@ -75,14 +74,13 @@ public:
                                const BSONObj& keys,
                                bool unique) override;
 
-private:
     /**
      * Returns the metadata that should be used when running commands against this shard with
      * the given read preference.
      */
     BSONObj _appendMetadataForCommand(OperationContext* txn, const ReadPreferenceSetting& readPref);
 
-    Shard::HostWithResponse _runCommand(OperationContext* txn,
+    HostWithResponse _runCommand(OperationContext* txn,
                                         const ReadPreferenceSetting& readPref,
                                         const std::string& dbname,
                                         Milliseconds maxTimeMSOverride,
@@ -106,6 +104,9 @@ private:
      * Targeter for obtaining hosts from which to read or to which to write.
      */
     const std::shared_ptr<RemoteCommandTargeter> _targeter;
+
+    friend class ShardFactory;
+    friend class Shard;
 };
 
 }  // namespace mongo

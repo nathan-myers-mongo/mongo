@@ -62,27 +62,27 @@ public:
     /**
      * Lookup shard by replica set name. Returns nullptr if the name can't be found.
      */
-    std::shared_ptr<Shard> findByRSName(const std::string& rsName) const;
+    boost::optional<Shard> findByRSName(const std::string& rsName) const;
 
     /**
      * Returns a shared pointer to the shard object with the given shard id.
      */
-    std::shared_ptr<Shard> findByShardId(const ShardId&) const;
+    boost::optional<Shard> findByShardId(const ShardId&) const;
 
     /**
      * Finds the Shard that the mongod listening at this HostAndPort is a member of.
      */
-    std::shared_ptr<Shard> findByHostAndPort(const HostAndPort&) const;
+    boost::optional<Shard> findByHostAndPort(const HostAndPort&) const;
 
     /**
      * Returns config shard.
      */
-    std::shared_ptr<Shard> getConfigShard() const;
+    Shard getConfigShard() const;
 
     /**
      * Adds config shard.
      */
-    void addConfigShard(std::shared_ptr<Shard>);
+    void addConfigShard(Shard);
 
     void getAllShardIds(std::set<ShardId>& result) const;
 
@@ -109,13 +109,13 @@ private:
      * lookup maps. Otherwise the current connection string from the Shard's RemoteCommandTargeter
      * will be used.
      */
-    void _addShard_inlock(const std::shared_ptr<Shard>&, bool useOriginalCS);
-    std::shared_ptr<Shard> _findByShardId_inlock(const ShardId&) const;
+    void _addShard_inlock(Shard, bool useOriginalCS);
+    boost::optional<Shard> _findByShardId_inlock(const ShardId&) const;
     void _rebuildShard_inlock(const ConnectionString& newConnString, ShardFactory* factory);
 
     // Protects the lookup maps below.
     mutable stdx::mutex _mutex;
-    using ShardMap = stdx::unordered_map<ShardId, std::shared_ptr<Shard>, ShardId::Hasher>;
+    using ShardMap = stdx::unordered_map<ShardId, Shard, ShardId::Hasher>;
 
     // Map of both shardName -> Shard and hostName -> Shard
     ShardMap _lookup;
@@ -123,10 +123,10 @@ private:
     // Map from replica set name to shard corresponding to this replica set
     ShardMap _rsLookup;
 
-    stdx::unordered_map<HostAndPort, std::shared_ptr<Shard>> _hostLookup;
+    stdx::unordered_map<HostAndPort, Shard> _hostLookup;
 
     // store configShard separately to always have a reference
-    std::shared_ptr<Shard> _configShard;
+    boost::optional<Shard> _configShard;
 };
 
 /**
@@ -174,33 +174,32 @@ public:
     void updateReplSetHosts(const ConnectionString& newConnString);
 
     /**
-     * Returns a shared pointer to the shard object with the given shard id, or ShardNotFound error
-     * otherwise.
+     * Returns the shard object with the given shard id, or ShardNotFound error otherwise.
      *
      * May refresh the shard registry if there's no cached information about the shard. The shardId
      * parameter can actually be the shard name or the HostAndPort for any
      * server in the shard.
      */
-    StatusWith<std::shared_ptr<Shard>> getShard(OperationContext* txn, const ShardId& shardId);
+    StatusWith<Shard> getShard(OperationContext* txn, const ShardId& shardId);
 
     /**
-     * Returns a shared pointer to the shard object with the given shard id. The shardId parameter
+     * Returns the shard object with the given shard id. The shardId parameter
      * can actually be the shard name or the HostAndPort for any server in the shard. Will not
      * refresh the shard registry or otherwise perform any network traffic. This means that if the
      * shard was recently added it may not be found.  USE WITH CAUTION.
      */
-    std::shared_ptr<Shard> getShardNoReload(const ShardId& shardId);
+    boost::optional<Shard> getShardNoReload(const ShardId& shardId);
 
     /**
      * Finds the Shard that the mongod listening at this HostAndPort is a member of. Will not
      * refresh the shard registry or otherwise perform any network traffic.
      */
-    std::shared_ptr<Shard> getShardForHostNoReload(const HostAndPort& shardHost);
+    boost::optional<Shard> getShardForHostNoReload(const HostAndPort& shardHost);
 
     /**
-     * Returns shared pointer to the shard object representing the config servers.
+     * Returns the shard object representing the config servers.
      */
-    std::shared_ptr<Shard> getConfigShard() const;
+    Shard getConfigShard() const;
 
     /**
      * Instantiates a new detached shard connection, which does not appear in the list of shards
@@ -210,14 +209,14 @@ public:
      *
      * @param connStr Connection string to the shard.
      */
-    std::unique_ptr<Shard> createConnection(const ConnectionString& connStr) const;
+    Shard createConnection(const ConnectionString& connStr) const;
 
     /**
-     * Lookup shard by replica set name. Returns nullptr if the name can't be found.
+     * Lookup shard by replica set name. Returns none if the name can't be found.
      * Note: this doesn't refresh the table if the name isn't found, so it's possible that a
      * newly added shard/Replica Set may not be found.
      */
-    std::shared_ptr<Shard> lookupRSName(const std::string& name) const;
+    boost::optional<Shard> lookupRSName(const std::string& name) const;
 
     void getAllShardIds(std::vector<ShardId>* all) const;
     void toBSON(BSONObjBuilder* result) const;

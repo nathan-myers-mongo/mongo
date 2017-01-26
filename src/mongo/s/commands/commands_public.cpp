@@ -98,7 +98,7 @@ bool cursorCommandPassthrough(OperationContext* txn,
         return Command::appendCommandStatus(*out, shardStatus.getStatus());
     }
     const auto shard = shardStatus.getValue();
-    ScopedDbConnection conn(shard->getConnString());
+    ScopedDbConnection conn(shard.getConnString());
     auto cursor = conn->query(str::stream() << conf->name() << ".$cmd",
                               cmdObj,
                               -1,    // nToReturn
@@ -205,7 +205,7 @@ private:
             Grid::get(txn)->shardRegistry()->getShard(txn, conf->getPrimaryId());
         const auto shard = uassertStatusOK(shardStatus);
 
-        ShardConnection conn(shard->getConnString(), "");
+        ShardConnection conn(shard.getConnString(), "");
 
         BSONObj res;
         bool ok = conn->runCommand(db, cmdObj, res, passOptions() ? options : 0);
@@ -214,7 +214,7 @@ private:
         // First append the properly constructed writeConcernError. It will then be skipped
         // in appendElementsUnique.
         if (auto wcErrorElem = res["writeConcernError"]) {
-            appendWriteConcernErrorToCmdResponse(shard->getId(), wcErrorElem, result);
+            appendWriteConcernErrorToCmdResponse(shard.getId(), wcErrorElem, result);
         }
         result.appendElementsUnique(res);
         return ok;
@@ -664,7 +664,7 @@ public:
         {
             const auto shard = uassertStatusOK(
                 Grid::get(txn)->shardRegistry()->getShard(txn, scopedFromDb.db()->getPrimaryId()));
-            b.append("fromhost", shard->getConnString().toString());
+            b.append("fromhost", shard.getConnString().toString());
         }
 
         return adminPassthrough(txn, scopedToDb.db(), b.obj(), result);
@@ -729,7 +729,7 @@ public:
 
             BSONObj res;
             {
-                ScopedDbConnection conn(shard->getConnString());
+                ScopedDbConnection conn(shard.getConnString());
                 if (!conn->runCommand(dbName, cmdObj, res)) {
                     if (!res["code"].eoo()) {
                         result.append(res["code"]);
@@ -914,7 +914,7 @@ public:
                 continue;
             }
 
-            ScopedDbConnection conn(shardStatus.getValue()->getConnString());
+            ScopedDbConnection conn(shardStatus.getValue().getConnString());
             BSONObj res;
             bool ok = conn->runCommand(conf->name(), cmdObj, res);
             conn.done();
@@ -1039,7 +1039,7 @@ public:
 
         BSONObj shardResult;
         try {
-            ShardConnection conn(primaryShardStatus.getValue()->getConnString(), "");
+            ShardConnection conn(primaryShardStatus.getValue().getConnString(), "");
 
             // TODO: this can throw a stale config when mongos is not up-to-date -- fix.
             if (!conn->runCommand(nss.db().toString(), command, shardResult, options)) {
@@ -1060,7 +1060,7 @@ public:
         Strategy::CommandResult cmdResult;
         cmdResult.shardTargetId = conf->getPrimaryId();
         cmdResult.result = shardResult;
-        cmdResult.target = primaryShardStatus.getValue()->getConnString();
+        cmdResult.target = primaryShardStatus.getValue().getConnString();
 
         return ClusterExplain::buildExplainResult(
             txn, {cmdResult}, ClusterExplain::kSingleShard, timer.millis(), out);
@@ -1218,7 +1218,7 @@ public:
                 continue;
             }
 
-            ShardConnection conn(shardStatus.getValue()->getConnString(), nss.ns());
+            ShardConnection conn(shardStatus.getValue().getConnString(), nss.ns());
             BSONObj res;
             bool ok = conn->runCommand(conf->name(), cmdObj, res, options);
             conn.done();
@@ -1544,7 +1544,7 @@ public:
             }
 
             futures.push_back(Future::spawnCommand(
-                shardStatus.getValue()->getConnString().toString(), dbName, cmdObj, options));
+                shardStatus.getValue().getConnString().toString(), dbName, cmdObj, options));
             shardArray.append(shardId.toString());
         }
 

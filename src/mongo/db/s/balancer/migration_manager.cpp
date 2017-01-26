@@ -250,7 +250,7 @@ void MigrationManager::startRecoveryAndAcquireDistLocks(OperationContext* txn) {
 
     // Load the active migrations from the config.migrations collection.
     auto statusWithMigrationsQueryResponse =
-        Grid::get(txn)->shardRegistry()->getConfigShard()->exhaustiveFindOnConfig(
+        Grid::get(txn)->shardRegistry()->getConfigShard().exhaustiveFindOnConfig(
             txn,
             ReadPreferenceSetting{ReadPreference::PrimaryOnly},
             repl::ReadConcernLevel::kLocalReadConcern,
@@ -462,7 +462,7 @@ shared_ptr<Notification<RemoteCommandResponse>> MigrationManager::_schedule(
 
     const auto fromShard = fromShardStatus.getValue();
     auto fromHostStatus =
-        fromShard->getTargeter()->findHost(txn, ReadPreferenceSetting{ReadPreference::PrimaryOnly});
+        fromShard.getTargeter()->findHost(txn, ReadPreferenceSetting{ReadPreference::PrimaryOnly});
     if (!fromHostStatus.isOK()) {
         return std::make_shared<Notification<RemoteCommandResponse>>(
             std::move(fromHostStatus.getStatus()));

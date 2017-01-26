@@ -215,7 +215,7 @@ public:
         const ConnectionString shardConnString = [&]() {
             const auto shard =
                 uassertStatusOK(shardRegistry->getShard(txn, config->getPrimaryId()));
-            return shard->getConnString();
+            return shard.getConnString();
         }();
 
         ScopedDbConnection conn(shardConnString);
@@ -552,7 +552,7 @@ public:
                 shared_ptr<Chunk> chunk = c->second;
 
                 // Can't move chunk to shard it's already on
-                if (to->getId() == chunk->getShardId()) {
+                if (to.getId() == chunk->getShardId()) {
                     continue;
                 }
 
@@ -566,14 +566,14 @@ public:
                 Status moveStatus = configsvr_client::moveChunk(
                     txn,
                     chunkType,
-                    to->getId(),
+                    to.getId(),
                     Grid::get(txn)->getBalancerConfiguration()->getMaxChunkSizeBytes(),
                     MigrationSecondaryThrottleOptions::create(
                         MigrationSecondaryThrottleOptions::kOff),
                     true);
                 if (!moveStatus.isOK()) {
                     warning() << "couldn't move chunk " << redact(chunk->toString()) << " to shard "
-                              << *to << " while sharding collection " << nss.ns()
+                              << to.toString() << " while sharding collection " << nss.ns()
                               << causedBy(redact(moveStatus));
                 }
             }

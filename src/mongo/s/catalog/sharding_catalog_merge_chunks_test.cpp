@@ -72,7 +72,7 @@ TEST_F(MergeChunkTest, MergeExistingChunksCorrectlyShouldSucceed) {
                                                  "shard0000"));
 
     auto findResponse = uassertStatusOK(
-        getConfigShard()->exhaustiveFindOnConfig(operationContext(),
+        getConfigShard().exhaustiveFindOnConfig(operationContext(),
                                                  ReadPreferenceSetting{ReadPreference::PrimaryOnly},
                                                  repl::ReadConcernLevel::kLocalReadConcern,
                                                  NamespaceString(ChunkType::ConfigNS),

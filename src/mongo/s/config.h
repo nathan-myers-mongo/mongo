@@ -86,7 +86,7 @@ public:
     void getChunkManagerOrPrimary(OperationContext* txn,
                                   const std::string& ns,
                                   std::shared_ptr<ChunkManager>& manager,
-                                  std::shared_ptr<Shard>& primary);
+                                  boost::optional<Shard>& primary);
 
     std::shared_ptr<ChunkManager> getChunkManager(OperationContext* txn,
                                                   const std::string& ns,

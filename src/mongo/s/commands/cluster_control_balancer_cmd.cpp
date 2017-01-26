@@ -85,7 +85,7 @@ public:
              BSONObjBuilder& result) override {
         auto configShard = Grid::get(txn)->shardRegistry()->getConfigShard();
         auto cmdResponse = uassertStatusOK(
-            configShard->runCommandWithFixedRetryAttempts(txn,
+            configShard.runCommandWithFixedRetryAttempts(txn,
                                                           kPrimaryOnlyReadPreference,
                                                           "admin",
                                                           BSON(_configsvrCommandName << 1),

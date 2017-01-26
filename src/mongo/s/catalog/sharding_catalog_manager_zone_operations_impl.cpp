@@ -59,7 +59,7 @@ const WriteConcernOptions kNoWaitWriteConcern(1, WriteConcernOptions::SyncMode::
  * Returns ErrorCodes::RangeOverlapConflict is an overlap is detected.
  */
 Status checkForOveralappedZonedKeyRange(OperationContext* txn,
-                                        Shard* configServer,
+                                        boost::optional<Shard> configServer,
                                         const NamespaceString& ns,
                                         const ChunkRange& range,
                                         const std::string& zoneName,
@@ -113,7 +113,7 @@ Status checkForOveralappedZonedKeyRange(OperationContext* txn,
  * key) with the shard key of ns.
  */
 StatusWith<ChunkRange> includeFullShardKey(OperationContext* txn,
-                                           Shard* configServer,
+                                           boost::optional<Shard> configServer,
                                            const NamespaceString& ns,
                                            const ChunkRange& range,
                                            KeyPattern* shardKeyPatternOut) {
@@ -210,7 +210,7 @@ Status ShardingCatalogManagerImpl::removeShardFromZone(OperationContext* txn,
     //
 
     auto findShardExistsStatus =
-        configShard->exhaustiveFindOnConfig(txn,
+        configShard.exhaustiveFindOnConfig(txn,
                                             kConfigPrimarySelector,
                                             repl::ReadConcernLevel::kLocalReadConcern,
                                             shardNS,
@@ -232,7 +232,7 @@ Status ShardingCatalogManagerImpl::removeShardFromZone(OperationContext* txn,
     //
 
     auto findShardStatus =
-        configShard->exhaustiveFindOnConfig(txn,
+        configShard.exhaustiveFindOnConfig(txn,
                                             kConfigPrimarySelector,
                                             repl::ReadConcernLevel::kLocalReadConcern,
                                             shardNS,
@@ -265,7 +265,7 @@ Status ShardingCatalogManagerImpl::removeShardFromZone(OperationContext* txn,
         }
 
         auto findChunkRangeStatus =
-            configShard->exhaustiveFindOnConfig(txn,
+            configShard.exhaustiveFindOnConfig(txn,
                                                 kConfigPrimarySelector,
                                                 repl::ReadConcernLevel::kLocalReadConcern,
                                                 NamespaceString(TagsType::ConfigNS),
@@ -319,7 +319,7 @@ Status ShardingCatalogManagerImpl::assignKeyRangeToZone(OperationContext* txn,
 
     KeyPattern shardKeyPattern{BSONObj()};
     auto fullShardKeyStatus =
-        includeFullShardKey(txn, configServer.get(), ns, givenRange, &shardKeyPattern);
+        includeFullShardKey(txn, configServer, ns, givenRange, &shardKeyPattern);
     if (!fullShardKeyStatus.isOK()) {
         return fullShardKeyStatus.getStatus();
     }
@@ -327,7 +327,7 @@ Status ShardingCatalogManagerImpl::assignKeyRangeToZone(OperationContext* txn,
     const auto& fullShardKeyRange = fullShardKeyStatus.getValue();
 
     auto zoneExistStatus =
-        configServer->exhaustiveFindOnConfig(txn,
+        configServer.exhaustiveFindOnConfig(txn,
                                              kConfigPrimarySelector,
                                              repl::ReadConcernLevel::kLocalReadConcern,
                                              NamespaceString(ShardType::ConfigNS),
@@ -346,7 +346,7 @@ Status ShardingCatalogManagerImpl::assignKeyRangeToZone(OperationContext* txn,
     }
 
     auto overlapStatus = checkForOveralappedZonedKeyRange(
-        txn, configServer.get(), ns, fullShardKeyRange, zoneName, shardKeyPattern);
+        txn, configServer, ns, fullShardKeyRange, zoneName, shardKeyPattern);
     if (!overlapStatus.isOK()) {
         return overlapStatus;
     }
@@ -381,7 +381,7 @@ Status ShardingCatalogManagerImpl::removeKeyRangeFromZone(OperationContext* txn,
 
     KeyPattern shardKeyPattern{BSONObj()};
     auto fullShardKeyStatus =
-        includeFullShardKey(txn, configServer.get(), ns, range, &shardKeyPattern);
+        includeFullShardKey(txn, configServer, ns, range, &shardKeyPattern);
     if (!fullShardKeyStatus.isOK()) {
         return fullShardKeyStatus.getStatus();
     }

@@ -94,7 +94,7 @@ public:
 
         // Forward to config shard, which will forward to all shards.
         auto configShard = Grid::get(txn)->shardRegistry()->getConfigShard();
-        auto response = uassertStatusOK(configShard->runCommandWithFixedRetryAttempts(
+        auto response = uassertStatusOK(configShard.runCommandWithFixedRetryAttempts(
             txn,
             ReadPreferenceSetting{ReadPreference::PrimaryOnly},
             dbname,

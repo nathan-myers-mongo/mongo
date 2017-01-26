@@ -193,7 +193,7 @@ public:
 
         uassertStatusOK(configsvr_client::moveChunk(txn,
                                                     chunkType,
-                                                    to->getId(),
+                                                    to.getId(),
                                                     maxChunkSizeBytes,
                                                     secondaryThrottle,
                                                     cmdObj["_waitForDelete"].trueValue()));

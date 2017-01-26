@@ -172,27 +172,7 @@ using namespace mongo;
 
 static Status initializeSharding(OperationContext* txn) {
     auto targeterFactory = stdx::make_unique<RemoteCommandTargeterFactoryImpl>();
-    auto targeterFactoryPtr = targeterFactory.get();
-
-    ShardFactory::BuilderCallable setBuilder =
-        [targeterFactoryPtr](const ShardId& shardId, const ConnectionString& connStr) {
-            return stdx::make_unique<ShardRemote>(
-                shardId, connStr, targeterFactoryPtr->create(connStr));
-        };
-
-    ShardFactory::BuilderCallable masterBuilder =
-        [targeterFactoryPtr](const ShardId& shardId, const ConnectionString& connStr) {
-            return stdx::make_unique<ShardRemote>(
-                shardId, connStr, targeterFactoryPtr->create(connStr));
-        };
-
-    ShardFactory::BuildersMap buildersMap{
-        {ConnectionString::SET, std::move(setBuilder)},
-        {ConnectionString::MASTER, std::move(masterBuilder)},
-    };
-
-    auto shardFactory =
-        stdx::make_unique<ShardFactory>(std::move(buildersMap), std::move(targeterFactory));
+    auto shardFactory = stdx::make_unique<ShardFactory>(std::move(targeterFactory));
 
     Status status = initializeGlobalShardingState(
         txn,

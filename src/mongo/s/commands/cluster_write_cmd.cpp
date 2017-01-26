@@ -270,7 +270,7 @@ private:
             if (!shardStatus.isOK()) {
                 return shardStatus.getStatus();
             }
-            auto swHostAndPort = shardStatus.getValue()->getTargeter()->findHostNoWait(readPref);
+            auto swHostAndPort = shardStatus.getValue().getTargeter()->findHostNoWait(readPref);
             if (!swHostAndPort.isOK()) {
                 return swHostAndPort.getStatus();
             }
@@ -302,7 +302,7 @@ private:
                 if (!shardStatus.isOK()) {
                     return shardStatus.getStatus();
                 }
-                result.shardTargetId = shardStatus.getValue()->getId();
+                result.shardTargetId = shardStatus.getValue().getId();
             }
             result.result = response.toBSON();
 

@@ -290,7 +290,7 @@ public:
                 }
                 const auto shard = shardStatus.getValue();
 
-                string sconnString = shard->getConnString().toString();
+                string sconnString = shard.getConnString().toString();
                 Status* s = _getStatus(sconnString);
 
                 if (!s->avail) {

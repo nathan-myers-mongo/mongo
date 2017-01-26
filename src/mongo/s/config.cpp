@@ -83,9 +83,9 @@ void DBConfig::markNSNotSharded(const std::string& ns) {
 void DBConfig::getChunkManagerOrPrimary(OperationContext* txn,
                                         const std::string& ns,
                                         std::shared_ptr<ChunkManager>& manager,
-                                        std::shared_ptr<Shard>& primary) {
+                                        boost::optional<Shard>& primary) {
     manager.reset();
-    primary.reset();
+    primary = boost::none;
 
     const auto shardRegistry = Grid::get(txn)->shardRegistry();
 

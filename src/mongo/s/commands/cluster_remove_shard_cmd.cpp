@@ -102,13 +102,13 @@ public:
 
         auto catalogClient = grid.catalogClient(txn);
         StatusWith<ShardDrainingStatus> removeShardResult =
-            catalogClient->removeShard(txn, s->getId());
+            catalogClient->removeShard(txn, s.getId());
         if (!removeShardResult.isOK()) {
             return appendCommandStatus(result, removeShardResult.getStatus());
         }
 
         vector<string> databases;
-        Status status = catalogClient->getDatabasesForShard(txn, s->getId(), &databases);
+        Status status = catalogClient->getDatabasesForShard(txn, s.getId(), &databases);
         if (!status.isOK()) {
             return appendCommandStatus(result, status);
         }
@@ -136,14 +136,14 @@ public:
             case ShardDrainingStatus::STARTED:
                 result.append("msg", "draining started successfully");
                 result.append("state", "started");
-                result.append("shard", s->getId().toString());
+                result.append("shard", s.getId().toString());
                 result.appendElements(dbInfo);
                 break;
             case ShardDrainingStatus::ONGOING: {
                 vector<ChunkType> chunks;
                 Status status =
                     catalogClient->getChunks(txn,
-                                             BSON(ChunkType::shard(s->getId().toString())),
+                                             BSON(ChunkType::shard(s.getId().toString())),
                                              BSONObj(),
                                              boost::none,  // return all
                                              &chunks,
@@ -168,7 +168,7 @@ public:
             case ShardDrainingStatus::COMPLETED:
                 result.append("msg", "removeshard completed successfully");
                 result.append("state", "completed");
-                result.append("shard", s->getId().toString());
+                result.append("shard", s.getId().toString());
         }
 
         return true;

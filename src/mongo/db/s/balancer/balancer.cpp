@@ -496,7 +496,7 @@ bool Balancer::_checkOIDs(OperationContext* txn) {
         const auto s = shardStatus.getValue();
 
         auto result = uassertStatusOK(
-            s->runCommandWithFixedRetryAttempts(txn,
+            s.runCommandWithFixedRetryAttempts(txn,
                                                 ReadPreferenceSetting{ReadPreference::PrimaryOnly},
                                                 "admin",
                                                 BSON("features" << 1),
@@ -512,7 +512,7 @@ bool Balancer::_checkOIDs(OperationContext* txn) {
                 log() << "error: 2 machines have " << x << " as oid machine piece: " << shardId
                       << " and " << oids[x];
 
-                result = uassertStatusOK(s->runCommandWithFixedRetryAttempts(
+                result = uassertStatusOK(s.runCommandWithFixedRetryAttempts(
                     txn,
                     ReadPreferenceSetting{ReadPreference::PrimaryOnly},
                     "admin",
@@ -523,7 +523,7 @@ bool Balancer::_checkOIDs(OperationContext* txn) {
                 auto otherShardStatus = shardingContext->shardRegistry()->getShard(txn, oids[x]);
                 if (otherShardStatus.isOK()) {
                     result = uassertStatusOK(
-                        otherShardStatus.getValue()->runCommandWithFixedRetryAttempts(
+                        otherShardStatus.getValue().runCommandWithFixedRetryAttempts(
                             txn,
                             ReadPreferenceSetting{ReadPreference::PrimaryOnly},
                             "admin",
@@ -535,7 +535,7 @@ bool Balancer::_checkOIDs(OperationContext* txn) {
                 return false;
             }
         } else {
-            log() << "warning: oidMachine not set on: " << s->toString();
+            log() << "warning: oidMachine not set on: " << s.toString();
         }
     }
 

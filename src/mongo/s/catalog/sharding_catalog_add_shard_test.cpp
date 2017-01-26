@@ -293,7 +293,7 @@ protected:
      */
     void assertChangeWasLogged(const ShardType& addedShard) {
         auto response = assertGet(
-            getConfigShard()->exhaustiveFindOnConfig(operationContext(),
+            getConfigShard().exhaustiveFindOnConfig(operationContext(),
                                                      ReadPreferenceSetting{
                                                          ReadPreference::PrimaryOnly},
                                                      repl::ReadConcernLevel::kLocalReadConcern,

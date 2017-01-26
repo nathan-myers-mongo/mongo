@@ -383,10 +383,11 @@ void ParallelSortClusteredCursor::setupVersionAndHandleSlaveOk(
     OperationContext* txn,
     PCStatePtr state,
     const ShardId& shardId,
-    std::shared_ptr<Shard> primary,
+    boost::optional<Shard> primary,
     const NamespaceString& ns,
     const string& vinfo,
     std::shared_ptr<ChunkManager> manager) {
+
     if (manager) {
         state->manager = manager;
     } else if (primary) {
@@ -398,7 +399,7 @@ void ParallelSortClusteredCursor::setupVersionAndHandleSlaveOk(
     // Setup conn
     if (!state->conn) {
         const auto shard = uassertStatusOK(grid.shardRegistry()->getShard(txn, shardId));
-        state->conn.reset(new ShardConnection(shard->getConnString(), ns.ns(), manager));
+        state->conn.reset(new ShardConnection(shard.getConnString(), ns.ns(), manager));
     }
 
     const DBClientBase* rawConn = state->conn->getRawConn();
@@ -465,7 +466,7 @@ void ParallelSortClusteredCursor::startInit(OperationContext* txn) {
     const NamespaceString nss(!_cInfo.isEmpty() ? _cInfo.versionedNS : _qSpec.ns());
 
     shared_ptr<ChunkManager> manager;
-    shared_ptr<Shard> primary;
+    boost::optional<Shard> primary;
 
     string prefix;
     if (MONGO_unlikely(shouldLog(pc))) {
@@ -545,10 +546,11 @@ void ParallelSortClusteredCursor::startInit(OperationContext* txn) {
                     warning() << "Collection becoming unsharded detected";
                 if (manager && !state->manager)
                     warning() << "Collection becoming sharded detected";
-                if (primary && state->primary && primary != state->primary)
+                if (primary && state->primary && primary->getId() != state->primary->getId())
                     warning() << "Weird shift of primary detected";
 
-                compatiblePrimary = primary && state->primary && primary == state->primary;
+                compatiblePrimary =
+                    primary && state->primary && primary->getId() == state->primary->getId();
                 compatibleManager =
                     manager && state->manager && manager->compatibleWith(*state->manager, shardId);
 
@@ -950,7 +952,7 @@ void ParallelSortClusteredCursor::finishInit(OperationContext* txn) {
 
         {
             const auto shard = uassertStatusOK(grid.shardRegistry()->getShard(txn, i->first));
-            _servers.insert(shard->getConnString().toString());
+            _servers.insert(shard.getConnString().toString());
         }
 
         index++;

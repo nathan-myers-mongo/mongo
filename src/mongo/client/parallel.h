@@ -31,6 +31,8 @@
 
 #pragma once
 
+#include <boost/optional.hpp>
+
 #include "mongo/db/namespace_string.h"
 #include "mongo/s/client/shard.h"
 #include "mongo/s/client/shard_connection.h"
@@ -68,8 +70,8 @@ class DBClientCursor;
 typedef std::shared_ptr<DBClientCursor> DBClientCursorPtr;
 
 class ParallelConnectionState {
-public:
-    ParallelConnectionState() : count(0), done(false) {}
+  public:
+    ParallelConnectionState() : primary(boost::none), count(), done() {}
 
     // Please do not reorder. cursor destructor can use conn.
     // On a related note, never attempt to cleanup these pointers manually.
@@ -78,7 +80,7 @@ public:
 
     // Version information
     std::shared_ptr<ChunkManager> manager;
-    std::shared_ptr<Shard> primary;
+    boost::optional<Shard> primary;
 
     // Cursor status information
     long long count;
@@ -213,7 +215,7 @@ private:
     void setupVersionAndHandleSlaveOk(OperationContext* txn,
                                       PCStatePtr state /* in & out */,
                                       const ShardId& shardId,
-                                      std::shared_ptr<Shard> primary /* in */,
+                                      boost::optional<Shard> primary /* in */,
                                       const NamespaceString& ns,
                                       const std::string& vinfo,
                                       std::shared_ptr<ChunkManager> manager /* in */);

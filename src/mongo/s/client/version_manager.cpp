@@ -267,7 +267,7 @@ bool checkShardVersion(OperationContext* txn,
         conf->getChunkManagerIfExists(txn, ns, true);
     }
 
-    shared_ptr<Shard> primary;
+    boost::optional<Shard> primary;
     shared_ptr<ChunkManager> manager;
 
     conf->getChunkManagerOrPrimary(txn, ns, manager, primary);
@@ -282,17 +282,18 @@ bool checkShardVersion(OperationContext* txn,
         return false;
     }
 
-    const auto shard = grid.shardRegistry()->getShardForHostNoReload(
+    const auto shardopt = grid.shardRegistry()->getShardForHostNoReload(
         uassertStatusOK(HostAndPort::parse(conn->getServerAddress())));
     uassert(ErrorCodes::ShardNotFound,
             str::stream() << conn->getServerAddress() << " is not recognized as a shard",
-            shard);
+            shardopt);
+    auto shard = std::move(shardopt.get());
 
     // Check this manager against the reference manager
     if (manager) {
-        if (refManager && !refManager->compatibleWith(*manager, shard->getId())) {
-            const ChunkVersion refVersion(refManager->getVersion(shard->getId()));
-            const ChunkVersion currentVersion(manager->getVersion(shard->getId()));
+        if (refManager && !refManager->compatibleWith(*manager, shard.getId())) {
+            const ChunkVersion refVersion(refManager->getVersion(shard.getId()));
+            const ChunkVersion currentVersion(manager->getVersion(shard.getId()));
 
             string msg(str::stream() << "manager (" << currentVersion.toString() << " : "
                                      << manager->getSequenceNumber()
@@ -303,9 +304,9 @@ bool checkShardVersion(OperationContext* txn,
                                      << refManager->getSequenceNumber()
                                      << ") "
                                      << "on shard "
-                                     << shard->getId()
+                                     << shard.getId()
                                      << " ("
-                                     << shard->getConnString().toString()
+                                     << shard.getConnString().toString()
                                      << ")");
 
             throw SendStaleConfigException(ns, msg, refVersion, currentVersion);
@@ -324,7 +325,7 @@ bool checkShardVersion(OperationContext* txn,
                                  << ")");
 
         throw SendStaleConfigException(
-            ns, msg, refManager->getVersion(shard->getId()), ChunkVersion::UNSHARDED());
+            ns, msg, refManager->getVersion(shard.getId()), ChunkVersion::UNSHARDED());
     }
 
     // Has the ChunkManager been reloaded since the last time we updated the shard version over
@@ -338,11 +339,11 @@ bool checkShardVersion(OperationContext* txn,
 
     ChunkVersion version = ChunkVersion(0, 0, OID());
     if (manager) {
-        version = manager->getVersion(shard->getId());
+        version = manager->getVersion(shard.getId());
     }
 
     LOG(1) << "setting shard version of " << version << " for " << ns << " on shard "
-           << shard->toString();
+           << shard.toString();
 
     LOG(3) << "last version sent with chunk manager iteration " << sequenceNumber
            << ", current chunk manager iteration is " << officialSequenceNumber;
@@ -393,7 +394,7 @@ bool checkShardVersion(OperationContext* txn,
     const int maxNumTries = 7;
     if (tryNumber < maxNumTries) {
         LOG(tryNumber < (maxNumTries / 2) ? 1 : 0)
-            << "going to retry checkShardVersion shard: " << shard->toString() << " " << result;
+            << "going to retry checkShardVersion shard: " << shard.toString() << " " << result;
         sleepmillis(10 * tryNumber);
         // use the original connection and get a fresh versionable connection
         // since conn can be invalidated (or worse, freed) after the failure
@@ -401,7 +402,7 @@ bool checkShardVersion(OperationContext* txn,
         return true;
     }
 
-    string errmsg = str::stream() << "setShardVersion failed shard: " << shard->toString() << " "
+    string errmsg = str::stream() << "setShardVersion failed shard: " << shard.toString() << " "
                                   << result;
     log() << "     " << errmsg;
     massert(10429, errmsg, 0);

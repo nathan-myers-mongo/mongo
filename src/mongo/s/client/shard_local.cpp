@@ -49,38 +49,38 @@
 
 namespace mongo {
 
-ShardLocal::ShardLocal(const ShardId& id) : Shard(id) {
-    // Currently ShardLocal only works for config servers. If we ever start using ShardLocal on
+Shard::ImplLocal::ImplLocal(const ShardId& id) : Impl(id) {
+    // Currently Shard::ImplLocal only works for config servers. If we ever start using Shard::ImplLocal on
     // shards we'll need to consider how to handle shards.
     invariant(serverGlobalParams.clusterRole == ClusterRole::ConfigServer);
 }
 
-const ConnectionString ShardLocal::getConnString() const {
+ConnectionString Shard::ImplLocal::getConnString() const {
     auto replCoord = repl::getGlobalReplicationCoordinator();
     return replCoord->getConfig().getConnectionString();
 }
 
-std::shared_ptr<RemoteCommandTargeter> ShardLocal::getTargeter() const {
+std::shared_ptr<RemoteCommandTargeter> Shard::ImplLocal::getTargeter() const {
     MONGO_UNREACHABLE;
 };
 
-const ConnectionString ShardLocal::originalConnString() const {
+ConnectionString Shard::ImplLocal::originalConnString() const {
     // Return the local connection string here as this method is only used for updating the
     // ShardRegistry and we don't need a mapping from hosts in the replica set config to the shard
     // for local shards.
     return ConnectionString::forLocal();
 }
 
-void ShardLocal::updateReplSetMonitor(const HostAndPort& remoteHost,
+void Shard::ImplLocal::updateReplSetMonitor(const HostAndPort& remoteHost,
                                       const Status& remoteCommandStatus) {
     MONGO_UNREACHABLE;
 }
 
-std::string ShardLocal::toString() const {
+std::string Shard::ImplLocal::toString() const {
     return getId().toString() + ":<local>";
 }
 
-bool ShardLocal::isRetriableError(ErrorCodes::Error code, RetryPolicy options) {
+bool Shard::ImplLocal::isRetriableError(ErrorCodes::Error code, RetryPolicy options) {
     if (options == RetryPolicy::kNoRetry) {
         return false;
     }
@@ -93,7 +93,7 @@ bool ShardLocal::isRetriableError(ErrorCodes::Error code, RetryPolicy options) {
     }
 }
 
-void ShardLocal::_updateLastOpTimeFromClient(OperationContext* txn,
+void Shard::ImplLocal::_updateLastOpTimeFromClient(OperationContext* txn,
                                              const repl::OpTime& previousOpTimeOnClient) {
     repl::OpTime lastOpTimeFromClient =
         repl::ReplClientInfo::forClient(txn->getClient()).getLastOp();
@@ -105,18 +105,18 @@ void ShardLocal::_updateLastOpTimeFromClient(OperationContext* txn,
     stdx::lock_guard<stdx::mutex> lk(_mutex);
     if (lastOpTimeFromClient >= _lastOpTime) {
         // It's always possible for lastOpTimeFromClient to be less than _lastOpTime if another
-        // thread started and completed a write through this ShardLocal (updating _lastOpTime)
+        // thread started and completed a write through this Shard::ImplLocal (updating _lastOpTime)
         // after this operation had completed its write but before it got here.
         _lastOpTime = lastOpTimeFromClient;
     }
 }
 
-repl::OpTime ShardLocal::_getLastOpTime() {
+repl::OpTime Shard::ImplLocal::_getLastOpTime() {
     stdx::lock_guard<stdx::mutex> lk(_mutex);
     return _lastOpTime;
 }
 
-Shard::HostWithResponse ShardLocal::_runCommand(OperationContext* txn,
+Shard::Impl::HostWithResponse Shard::ImplLocal::_runCommand(OperationContext* txn,
                                                 const ReadPreferenceSetting& unused,
                                                 const std::string& dbName,
                                                 Milliseconds maxTimeMSOverrideUnused,
@@ -137,17 +137,17 @@ Shard::HostWithResponse ShardLocal::_runCommand(OperationContext* txn,
         Status commandStatus = getStatusFromCommandResult(responseReply);
         Status writeConcernStatus = getWriteConcernStatusFromCommandResult(responseReply);
 
-        return Shard::HostWithResponse(boost::none,
+        return Shard::Impl::HostWithResponse(boost::none,
                                        Shard::CommandResponse{std::move(responseReply),
                                                               std::move(responseMetadata),
                                                               std::move(commandStatus),
                                                               std::move(writeConcernStatus)});
     } catch (const DBException& ex) {
-        return Shard::HostWithResponse(boost::none, ex.toStatus());
+      return Shard::Impl::HostWithResponse(boost::none, ex.toStatus());
     }
 }
 
-StatusWith<Shard::QueryResponse> ShardLocal::_exhaustiveFindOnConfig(
+StatusWith<Shard::QueryResponse> Shard::ImplLocal::_exhaustiveFindOnConfig(
     OperationContext* txn,
     const ReadPreferenceSetting& readPref,
     const repl::ReadConcernLevel& readConcernLevel,
@@ -161,7 +161,7 @@ StatusWith<Shard::QueryResponse> ShardLocal::_exhaustiveFindOnConfig(
         // Set up operation context with majority read snapshot so correct optime can be retrieved.
         Status status = txn->recoveryUnit()->setReadFromMajorityCommittedSnapshot();
 
-        // Wait for any writes performed by this ShardLocal instance to be committed and visible.
+        // Wait for any writes performed by this Shard::ImplLocal instance to be committed and visible.
         Status readConcernStatus = replCoord->waitUntilOpTimeForRead(
             txn, repl::ReadConcernArgs{_getLastOpTime(), readConcernLevel});
         if (!readConcernStatus.isOK()) {
@@ -208,7 +208,7 @@ StatusWith<Shard::QueryResponse> ShardLocal::_exhaustiveFindOnConfig(
     }
 }
 
-Status ShardLocal::createIndexOnConfig(OperationContext* txn,
+Status Shard::ImplLocal::createIndexOnConfig(OperationContext* txn,
                                        const NamespaceString& ns,
                                        const BSONObj& keys,
                                        bool unique) {

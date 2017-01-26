@@ -79,7 +79,7 @@ const HostAndPort dummyHost("dummy", 123);
 class DistLockCatalogFixture : public ShardingMongodTestFixture {
 public:
     std::shared_ptr<RemoteCommandTargeterMock> configTargeter() {
-        return RemoteCommandTargeterMock::get(shardRegistry()->getConfigShard()->getTargeter());
+        return RemoteCommandTargeterMock::get(shardRegistry()->getConfigShard().getTargeter());
     }
 
 protected:

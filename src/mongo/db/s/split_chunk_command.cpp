@@ -328,7 +328,7 @@ public:
             request.toConfigCommandBSON(ShardingCatalogClient::kMajorityWriteConcern.toBSON());
 
         auto cmdResponseStatus =
-            Grid::get(txn)->shardRegistry()->getConfigShard()->runCommandWithFixedRetryAttempts(
+            Grid::get(txn)->shardRegistry()->getConfigShard().runCommandWithFixedRetryAttempts(
                 txn,
                 kPrimaryOnlyReadPreference,
                 "admin",

@@ -349,7 +349,7 @@ TEST_F(ConfigInitializationTest, BuildsNecessaryIndexes) {
 }
 
 TEST_F(ConfigInitializationTest, CompatibleIndexAlreadyExists) {
-    getConfigShard()->createIndexOnConfig(
+    getConfigShard().createIndexOnConfig(
         operationContext(), NamespaceString(ShardType::ConfigNS), BSON("host" << 1), true);
 
     ASSERT_OK(catalogManager()->initializeConfigDatabaseIfNeeded(operationContext()));

@@ -791,7 +791,7 @@ void ReplicationCoordinatorExternalStateImpl::_shardingOnTransitionToPrimaryHook
         Balancer::get(txn)->initiateBalancer(txn);
     } else if (ShardingState::get(txn)->enabled()) {
         const auto configsvrConnStr =
-            Grid::get(txn)->shardRegistry()->getConfigShard()->getConnString();
+            Grid::get(txn)->shardRegistry()->getConfigShard().getConnString();
         auto status = ShardingState::get(txn)->updateShardIdentityConfigString(
             txn, configsvrConnStr.toString());
         if (!status.isOK()) {

@@ -173,7 +173,7 @@ Status ShardingCatalogManagerImpl::_initConfigIndexes(OperationContext* txn) {
     auto configShard = Grid::get(txn)->shardRegistry()->getConfigShard();
 
     Status result =
-        configShard->createIndexOnConfig(txn,
+        configShard.createIndexOnConfig(txn,
                                          NamespaceString(ChunkType::ConfigNS),
                                          BSON(ChunkType::ns() << 1 << ChunkType::min() << 1),
                                          unique);
@@ -183,7 +183,7 @@ Status ShardingCatalogManagerImpl::_initConfigIndexes(OperationContext* txn) {
                                     << causedBy(result));
     }
 
-    result = configShard->createIndexOnConfig(
+    result = configShard.createIndexOnConfig(
         txn,
         NamespaceString(ChunkType::ConfigNS),
         BSON(ChunkType::ns() << 1 << ChunkType::shard() << 1 << ChunkType::min() << 1),
@@ -194,7 +194,7 @@ Status ShardingCatalogManagerImpl::_initConfigIndexes(OperationContext* txn) {
                                     << causedBy(result));
     }
 
-    result = configShard->createIndexOnConfig(
+    result = configShard.createIndexOnConfig(
         txn,
         NamespaceString(ChunkType::ConfigNS),
         BSON(ChunkType::ns() << 1 << ChunkType::DEPRECATED_lastmod() << 1),
@@ -205,7 +205,7 @@ Status ShardingCatalogManagerImpl::_initConfigIndexes(OperationContext* txn) {
                                     << causedBy(result));
     }
 
-    result = configShard->createIndexOnConfig(
+    result = configShard.createIndexOnConfig(
         txn,
         NamespaceString(MigrationType::ConfigNS),
         BSON(MigrationType::ns() << 1 << MigrationType::min() << 1),
@@ -216,7 +216,7 @@ Status ShardingCatalogManagerImpl::_initConfigIndexes(OperationContext* txn) {
                                     << causedBy(result));
     }
 
-    result = configShard->createIndexOnConfig(
+    result = configShard.createIndexOnConfig(
         txn, NamespaceString(ShardType::ConfigNS), BSON(ShardType::host() << 1), unique);
     if (!result.isOK()) {
         return Status(result.code(),
@@ -224,7 +224,7 @@ Status ShardingCatalogManagerImpl::_initConfigIndexes(OperationContext* txn) {
                                     << causedBy(result));
     }
 
-    result = configShard->createIndexOnConfig(
+    result = configShard.createIndexOnConfig(
         txn, NamespaceString(LocksType::ConfigNS), BSON(LocksType::lockID() << 1), !unique);
     if (!result.isOK()) {
         return Status(result.code(),
@@ -233,7 +233,7 @@ Status ShardingCatalogManagerImpl::_initConfigIndexes(OperationContext* txn) {
     }
 
     result =
-        configShard->createIndexOnConfig(txn,
+        configShard.createIndexOnConfig(txn,
                                          NamespaceString(LocksType::ConfigNS),
                                          BSON(LocksType::state() << 1 << LocksType::process() << 1),
                                          !unique);
@@ -243,7 +243,7 @@ Status ShardingCatalogManagerImpl::_initConfigIndexes(OperationContext* txn) {
                                     << causedBy(result));
     }
 
-    result = configShard->createIndexOnConfig(
+    result = configShard.createIndexOnConfig(
         txn, NamespaceString(LockpingsType::ConfigNS), BSON(LockpingsType::ping() << 1), !unique);
     if (!result.isOK()) {
         return Status(result.code(),
@@ -251,7 +251,7 @@ Status ShardingCatalogManagerImpl::_initConfigIndexes(OperationContext* txn) {
                                     << causedBy(result));
     }
 
-    result = configShard->createIndexOnConfig(txn,
+    result = configShard.createIndexOnConfig(txn,
                                               NamespaceString(TagsType::ConfigNS),
                                               BSON(TagsType::ns() << 1 << TagsType::min() << 1),
                                               unique);
@@ -261,7 +261,7 @@ Status ShardingCatalogManagerImpl::_initConfigIndexes(OperationContext* txn) {
                                     << causedBy(result));
     }
 
-    result = configShard->createIndexOnConfig(txn,
+    result = configShard.createIndexOnConfig(txn,
                                               NamespaceString(TagsType::ConfigNS),
                                               BSON(TagsType::ns() << 1 << TagsType::tag() << 1),
                                               !unique);
@@ -289,7 +289,7 @@ Status ShardingCatalogManagerImpl::setFeatureCompatibilityVersionOnShards(
         }
         const auto shard = shardStatus.getValue();
 
-        auto response = shard->runCommandWithFixedRetryAttempts(
+        auto response = shard.runCommandWithFixedRetryAttempts(
             txn,
             ReadPreferenceSetting{ReadPreference::PrimaryOnly},
             "admin",

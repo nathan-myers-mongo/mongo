@@ -262,7 +262,7 @@ Status ClusterAggregate::runAggregate(OperationContext* txn,
     const auto mergingShard =
         uassertStatusOK(Grid::get(txn)->shardRegistry()->getShard(txn, mergingShardId));
 
-    ShardConnection conn(mergingShard->getConnString(), outputNsOrEmpty);
+    ShardConnection conn(mergingShard.getConnString(), outputNsOrEmpty);
     BSONObj mergedResults =
         aggRunCommand(txn, conn.get(), namespaces, mergeCmd.freeze().toBson(), options);
     conn.done();
@@ -430,14 +430,14 @@ Status ClusterAggregate::aggPassthrough(OperationContext* txn,
         return shardStatus.getStatus();
     }
 
-    ShardConnection conn(shardStatus.getValue()->getConnString(), "");
+    ShardConnection conn(shardStatus.getValue().getConnString(), "");
     BSONObj result = aggRunCommand(txn, conn.get(), namespaces, cmdObj, queryOptions);
     conn.done();
 
     // First append the properly constructed writeConcernError. It will then be skipped
     // in appendElementsUnique.
     if (auto wcErrorElem = result["writeConcernError"]) {
-        appendWriteConcernErrorToCmdResponse(shardStatus.getValue()->getId(), wcErrorElem, *out);
+        appendWriteConcernErrorToCmdResponse(shardStatus.getValue().getId(), wcErrorElem, *out);
     }
 
     out->appendElementsUnique(result);

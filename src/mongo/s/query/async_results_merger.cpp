@@ -697,8 +697,8 @@ bool AsyncResultsMerger::RemoteCursorData::exhausted() const {
 
 Status AsyncResultsMerger::RemoteCursorData::resolveShardIdToHostAndPort(
     const ReadPreferenceSetting& readPref) {
-    invariant(shardId);
-    invariant(!cursorId);
+    invariant(this->shardId);
+    invariant(!this->cursorId);
 
     const auto shard = getShard();
     if (!shard) {
@@ -717,10 +717,10 @@ Status AsyncResultsMerger::RemoteCursorData::resolveShardIdToHostAndPort(
     return Status::OK();
 }
 
-std::shared_ptr<Shard> AsyncResultsMerger::RemoteCursorData::getShard() {
-    invariant(shardId || _shardHostAndPort);
-    if (shardId) {
-        return grid.shardRegistry()->getShardNoReload(*shardId);
+boost::optional<Shard> AsyncResultsMerger::RemoteCursorData::getShard() {
+    invariant(this->shardId || _shardHostAndPort);
+    if (this->shardId) {
+        return grid.shardRegistry()->getShardNoReload(*this->shardId);
     } else {
         return grid.shardRegistry()->getShardNoReload(_shardHostAndPort->toString());
     }

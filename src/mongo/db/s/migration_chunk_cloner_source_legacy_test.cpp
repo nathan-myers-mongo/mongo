@@ -79,7 +79,7 @@ protected:
 
         _client.emplace(operationContext());
 
-        RemoteCommandTargeterMock::get(shardRegistry()->getConfigShard()->getTargeter())
+        RemoteCommandTargeterMock::get(shardRegistry()->getConfigShard().getTargeter())
             ->setConnectionStringReturnValue(kConfigConnStr);
 
         {

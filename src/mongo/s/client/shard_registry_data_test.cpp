@@ -56,25 +56,7 @@ private:
         auto targeterFactory = stdx::make_unique<RemoteCommandTargeterFactoryMock>();
         auto targeterFactoryPtr = targeterFactory.get();
 
-        ShardFactory::BuilderCallable setBuilder =
-            [targeterFactoryPtr](const ShardId& shardId, const ConnectionString& connStr) {
-                return stdx::make_unique<ShardRemote>(
-                    shardId, connStr, targeterFactoryPtr->create(connStr));
-            };
-
-        ShardFactory::BuilderCallable masterBuilder =
-            [targeterFactoryPtr](const ShardId& shardId, const ConnectionString& connStr) {
-                return stdx::make_unique<ShardRemote>(
-                    shardId, connStr, targeterFactoryPtr->create(connStr));
-            };
-
-        ShardFactory::BuildersMap buildersMap{
-            {ConnectionString::SET, std::move(setBuilder)},
-            {ConnectionString::MASTER, std::move(masterBuilder)},
-        };
-
-        _shardFactory =
-            stdx::make_unique<ShardFactory>(std::move(buildersMap), std::move(targeterFactory));
+        _shardFactory = stdx::make_unique<ShardFactory>(std::move(targeterFactory));
     }
 
     void tearDown() override {}
@@ -90,7 +72,7 @@ TEST_F(ShardRegistryDataTest, AddConfigShard) {
     ShardRegistryData data;
     data.addConfigShard(configShard);
 
-    ASSERT_EQUALS(configCS.toString(), data.getConfigShard()->originalConnString().toString());
+    ASSERT_EQUALS(configCS.toString(), data.getConfigShard().originalConnString().toString());
 }
 
 }  // unnamed namespace

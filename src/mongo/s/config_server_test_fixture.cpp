@@ -172,7 +172,7 @@ void ConfigServerTestFixture::onCommandForAddShard(NetworkTestEnv::OnCommandFunc
     _addShardNetworkTestEnv->onCommand(func);
 }
 
-std::shared_ptr<Shard> ConfigServerTestFixture::getConfigShard() const {
+Shard ConfigServerTestFixture::getConfigShard() const {
     return shardRegistry()->getConfigShard();
 }
 
@@ -273,7 +273,7 @@ StatusWith<std::vector<BSONObj>> ConfigServerTestFixture::getIndexes(OperationCo
                                                                      const NamespaceString& ns) {
     auto configShard = getConfigShard();
 
-    auto response = configShard->runCommand(txn,
+    auto response = configShard.runCommand(txn,
                                             ReadPreferenceSetting{ReadPreference::PrimaryOnly},
                                             ns.db().toString(),
                                             BSON("listIndexes" << ns.coll().toString()),

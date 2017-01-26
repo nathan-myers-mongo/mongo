@@ -52,33 +52,7 @@ Status initializeGlobalShardingStateForMongod(OperationContext* txn,
                                               const ConnectionString& configCS,
                                               StringData distLockProcessId) {
     auto targeterFactory = stdx::make_unique<RemoteCommandTargeterFactoryImpl>();
-    auto targeterFactoryPtr = targeterFactory.get();
-
-    ShardFactory::BuilderCallable setBuilder =
-        [targeterFactoryPtr](const ShardId& shardId, const ConnectionString& connStr) {
-            return stdx::make_unique<ShardRemote>(
-                shardId, connStr, targeterFactoryPtr->create(connStr));
-        };
-
-    ShardFactory::BuilderCallable masterBuilder =
-        [targeterFactoryPtr](const ShardId& shardId, const ConnectionString& connStr) {
-            return stdx::make_unique<ShardRemote>(
-                shardId, connStr, targeterFactoryPtr->create(connStr));
-        };
-
-    ShardFactory::BuilderCallable localBuilder = [](const ShardId& shardId,
-                                                    const ConnectionString& connStr) {
-        return stdx::make_unique<ShardLocal>(shardId);
-    };
-
-    ShardFactory::BuildersMap buildersMap{
-        {ConnectionString::SET, std::move(setBuilder)},
-        {ConnectionString::MASTER, std::move(masterBuilder)},
-        {ConnectionString::LOCAL, std::move(localBuilder)},
-    };
-
-    auto shardFactory =
-        stdx::make_unique<ShardFactory>(std::move(buildersMap), std::move(targeterFactory));
+    auto shardFactory = stdx::make_unique<ShardFactory>(std::move(targeterFactory));
 
     return initializeGlobalShardingState(
         txn,

@@ -262,7 +262,7 @@ Status mergeChunks(OperationContext* txn,
 
     auto configCmdObj =
         request.toConfigCommandBSON(ShardingCatalogClient::kMajorityWriteConcern.toBSON());
-    auto cmdResponseStatus = Grid::get(txn)->shardRegistry()->getConfigShard()->runCommand(
+    auto cmdResponseStatus = Grid::get(txn)->shardRegistry()->getConfigShard().runCommand(
         txn,
         ReadPreferenceSetting{ReadPreference::PrimaryOnly},
         "admin",

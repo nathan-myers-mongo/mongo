@@ -225,7 +225,7 @@ private:
         /**
          * Returns the Shard object associated with this remote cursor.
          */
-        std::shared_ptr<Shard> getShard();
+        boost::optional<Shard> getShard();
 
         // ShardId on which a cursor will be created.
         // TODO: This should always be set.

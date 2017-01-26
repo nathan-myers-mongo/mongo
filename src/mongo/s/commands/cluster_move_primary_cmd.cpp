@@ -159,10 +159,10 @@ public:
 
         uassert(ErrorCodes::IllegalOperation,
                 "it is already the primary",
-                fromShard->getId() != toShard->getId());
+                fromShard.getId() != toShard.getId());
 
-        log() << "Moving " << dbname << " primary from: " << fromShard->toString()
-              << " to: " << toShard->toString();
+        log() << "Moving " << dbname << " primary from: " << fromShard.toString()
+              << " to: " << toShard.toString();
 
         const std::string whyMessage(str::stream() << "Moving primary shard of " << dbname);
         auto scopedDistLock = uassertStatusOK(catalogClient->getDistLockManager()->lock(
@@ -175,17 +175,17 @@ public:
             txn,
             "movePrimary.start",
             dbname,
-            _buildMoveLogEntry(dbname, fromShard->toString(), toShard->toString(), shardedColls),
+            _buildMoveLogEntry(dbname, fromShard.toString(), toShard.toString(), shardedColls),
             ShardingCatalogClient::kMajorityWriteConcern);
 
-        ScopedDbConnection toconn(toShard->getConnString());
+        ScopedDbConnection toconn(toShard.getConnString());
 
         {
             // Make sure the target node is sharding aware.
             auto ssvRequest = SetShardVersionRequest::makeForInitNoPersist(
                 shardRegistry->getConfigServerConnectionString(),
-                toShard->getId(),
-                toShard->getConnString());
+                toShard.getId(),
+                toShard.getConnString());
             BSONObj res;
             bool ok = toconn->runCommand("admin", ssvRequest.toBSON(), res);
             if (!ok) {
@@ -206,7 +206,7 @@ public:
 
             const bool worked = toconn->runCommand(
                 dbname,
-                BSON("clone" << fromShard->getConnString().toString() << "collsToIgnore"
+                BSON("clone" << fromShard.getConnString().toString() << "collsToIgnore"
                              << barr.arr()
                              << bypassDocumentValidationCommandOption()
                              << true
@@ -222,7 +222,7 @@ public:
             }
 
             if (auto wcErrorElem = cloneRes["writeConcernError"]) {
-                appendWriteConcernErrorToCmdResponse(toShard->getId(), wcErrorElem, result);
+                appendWriteConcernErrorToCmdResponse(toShard.getId(), wcErrorElem, result);
                 hasWCError = true;
             }
         }
@@ -230,7 +230,7 @@ public:
         // Update the new primary in the config server metadata
         {
             auto dbt = uassertStatusOK(catalogClient->getDatabase(txn, dbname)).value;
-            dbt.setPrimary(toShard->getId());
+            dbt.setPrimary(toShard.getId());
 
             uassertStatusOK(catalogClient->updateDatabase(txn, dbname, dbt));
         }
@@ -239,9 +239,9 @@ public:
         // reload
         catalogCache->invalidate(dbname);
 
-        const string oldPrimary = fromShard->getConnString().toString();
+        const string oldPrimary = fromShard.getConnString().toString();
 
-        ScopedDbConnection fromconn(fromShard->getConnString());
+        ScopedDbConnection fromconn(fromShard.getConnString());
 
         if (shardedColls.empty()) {
             // TODO: Collections can be created in the meantime, and we should handle in the future.
@@ -254,7 +254,7 @@ public:
                 if (!hasWCError) {
                     if (auto wcErrorElem = dropDBInfo["writeConcernError"]) {
                         appendWriteConcernErrorToCmdResponse(
-                            fromShard->getId(), wcErrorElem, result);
+                            fromShard.getId(), wcErrorElem, result);
                         hasWCError = true;
                     }
                 }
@@ -287,7 +287,7 @@ public:
                         if (!hasWCError) {
                             if (auto wcErrorElem = dropCollInfo["writeConcernError"]) {
                                 appendWriteConcernErrorToCmdResponse(
-                                    fromShard->getId(), wcErrorElem, result);
+                                    fromShard.getId(), wcErrorElem, result);
                                 hasWCError = true;
                             }
                         }
@@ -306,14 +306,14 @@ public:
 
         fromconn.done();
 
-        result << "primary" << toShard->toString();
+        result << "primary" << toShard.toString();
 
         // Record finish in changelog
         catalogClient->logChange(
             txn,
             "movePrimary",
             dbname,
-            _buildMoveLogEntry(dbname, oldPrimary, toShard->toString(), shardedColls),
+            _buildMoveLogEntry(dbname, oldPrimary, toShard.toString(), shardedColls),
             ShardingCatalogClient::kMajorityWriteConcern);
 
         return true;

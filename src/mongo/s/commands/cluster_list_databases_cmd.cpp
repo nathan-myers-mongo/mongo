@@ -102,7 +102,7 @@ public:
             }
             const auto s = shardStatus.getValue();
 
-            auto response = uassertStatusOK(s->runCommandWithFixedRetryAttempts(
+            auto response = uassertStatusOK(s.runCommandWithFixedRetryAttempts(
                 txn,
                 ReadPreferenceSetting{ReadPreference::PrimaryPreferred},
                 "admin",
@@ -132,7 +132,7 @@ public:
                     bb.reset(new BSONObjBuilder());
                 }
 
-                bb->appendNumber(s->getId().toString(), size);
+                bb->appendNumber(s.getId().toString(), size);
             }
         }
 

@@ -116,7 +116,7 @@ public:
         result.append("shard", shardIdent);
         result.append("shardid", opId);
 
-        ScopedDbConnection conn(shard->getConnString());
+        ScopedDbConnection conn(shard.getConnString());
         // intentionally ignore return value - that is how legacy killOp worked.
         conn->runCommandWithMetadata(
             "admin", "killOp", rpc::makeEmptyMetadata(), BSON("killOp" << 1 << "op" << opId));

@@ -443,7 +443,7 @@ bool Chunk::splitIfShould(OperationContext* txn, long dataWritten) {
 
 ConnectionString Chunk::_getShardConnectionString(OperationContext* txn) const {
     const auto shard = uassertStatusOK(grid.shardRegistry()->getShard(txn, getShardId()));
-    return shard->getConnString();
+    return shard.getConnString();
 }
 
 void Chunk::appendShortVersion(const char* name, BSONObjBuilder& b) const {

@@ -87,7 +87,7 @@ public:
                         const ChunkRange& range,
                         const string& zoneName) {
         auto findStatus =
-            getConfigShard()->exhaustiveFindOnConfig(operationContext(),
+            getConfigShard().exhaustiveFindOnConfig(operationContext(),
                                                      kReadPref,
                                                      repl::ReadConcernLevel::kMajorityReadConcern,
                                                      NamespaceString(TagsType::ConfigNS),

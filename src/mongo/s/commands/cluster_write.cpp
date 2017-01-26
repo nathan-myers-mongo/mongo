@@ -133,7 +133,7 @@ void splitIfNeeded(OperationContext* txn, const NamespaceString& nss, const Targ
     shared_ptr<DBConfig> config = status.getValue();
 
     shared_ptr<ChunkManager> chunkManager;
-    shared_ptr<Shard> dummyShard;
+    boost::optional<Shard> dummyShard;
     config->getChunkManagerOrPrimary(txn, nss.ns(), chunkManager, dummyShard);
 
     if (!chunkManager) {

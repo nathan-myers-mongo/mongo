@@ -94,7 +94,7 @@ public:
         const auto conf = scopedDB.db();
 
         shared_ptr<ChunkManager> chunkMgr;
-        shared_ptr<Shard> shard;
+        boost::optional<Shard> shard;
 
         if (!conf->isSharded(nss.ns())) {
             auto shardStatus = Grid::get(txn)->shardRegistry()->getShard(txn, conf->getPrimaryId());
@@ -267,7 +267,7 @@ private:
 
         const auto shard = uassertStatusOK(Grid::get(txn)->shardRegistry()->getShard(txn, shardId));
 
-        ShardConnection conn(shard->getConnString(), nss.ns(), chunkManager);
+        ShardConnection conn(shard.getConnString(), nss.ns(), chunkManager);
         bool ok = conn->runCommand(conf->name(), cmdObj, res);
         conn.done();
 

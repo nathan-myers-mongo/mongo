@@ -59,7 +59,7 @@ StatusWith<long long> retrieveTotalShardSize(OperationContext* txn, const ShardI
         return shardStatus.getStatus();
     }
 
-    auto listDatabasesStatus = shardStatus.getValue()->runCommandWithFixedRetryAttempts(
+    auto listDatabasesStatus = shardStatus.getValue().runCommandWithFixedRetryAttempts(
         txn,
         ReadPreferenceSetting{ReadPreference::PrimaryPreferred},
         "admin",
@@ -98,7 +98,7 @@ StatusWith<BSONObj> selectMedianKey(OperationContext* txn,
         return shardStatus.getStatus();
     }
 
-    auto cmdStatus = shardStatus.getValue()->runCommandWithFixedRetryAttempts(
+    auto cmdStatus = shardStatus.getValue().runCommandWithFixedRetryAttempts(
         txn,
         ReadPreferenceSetting{ReadPreference::PrimaryPreferred},
         "admin",
@@ -144,7 +144,7 @@ StatusWith<std::vector<BSONObj>> selectChunkSplitPoints(OperationContext* txn,
         return shardStatus.getStatus();
     }
 
-    auto cmdStatus = shardStatus.getValue()->runCommandWithFixedRetryAttempts(
+    auto cmdStatus = shardStatus.getValue().runCommandWithFixedRetryAttempts(
         txn,
         ReadPreferenceSetting{ReadPreference::PrimaryPreferred},
         "admin",
@@ -209,7 +209,7 @@ StatusWith<boost::optional<ChunkRange>> splitChunkAtMultiplePoints(
     if (!shardStatus.isOK()) {
         status = shardStatus.getStatus();
     } else {
-        auto cmdStatus = shardStatus.getValue()->runCommandWithFixedRetryAttempts(
+        auto cmdStatus = shardStatus.getValue().runCommandWithFixedRetryAttempts(
             txn,
             ReadPreferenceSetting{ReadPreference::PrimaryOnly},
             "admin",

@@ -133,7 +133,7 @@ public:
 
         auto configShard = Grid::get(txn)->shardRegistry()->getConfigShard();
         auto cmdResponseStatus = uassertStatusOK(
-            configShard->runCommandWithFixedRetryAttempts(txn,
+            configShard.runCommandWithFixedRetryAttempts(txn,
                                                           kPrimaryOnlyReadPreference,
                                                           "admin",
                                                           cmdBuilder.obj(),

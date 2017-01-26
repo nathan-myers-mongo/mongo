@@ -154,15 +154,15 @@ StatusWith<CursorId> runQueryWithoutRetrying(OperationContext* txn,
                                              const CanonicalQuery& query,
                                              const ReadPreferenceSetting& readPref,
                                              ChunkManager* chunkManager,
-                                             std::shared_ptr<Shard> primary,
+                                             boost::optional<Shard> primary,
                                              std::vector<BSONObj>* results,
                                              BSONObj* viewDefinition) {
     auto shardRegistry = Grid::get(txn)->shardRegistry();
 
     // Get the set of shards on which we will run the query.
-    std::vector<std::shared_ptr<Shard>> shards;
+    std::vector<Shard> shards;
     if (primary) {
-        shards.emplace_back(std::move(primary));
+        shards.emplace_back(std::move(primary.get()));
     } else {
         invariant(chunkManager);
 
@@ -215,21 +215,21 @@ StatusWith<CursorId> runQueryWithoutRetrying(OperationContext* txn,
     // Use read pref to target a particular host from each shard. Also construct the find command
     // that we will forward to each shard.
     for (const auto& shard : shards) {
-        invariant(!shard->isConfig() || shard->getConnString().type() != ConnectionString::INVALID);
+        invariant(!shard.isConfig() || shard.getConnString().type() != ConnectionString::INVALID);
 
         // Build the find command, and attach shard version if necessary.
         BSONObjBuilder cmdBuilder;
         qrToForward.getValue()->asFindCommand(&cmdBuilder);
 
         if (chunkManager) {
-            ChunkVersion version(chunkManager->getVersion(shard->getId()));
+            ChunkVersion version(chunkManager->getVersion(shard.getId()));
             version.appendForCommands(&cmdBuilder);
         } else if (!query.nss().isOnInternalDb()) {
             ChunkVersion version(ChunkVersion::UNSHARDED());
             version.appendForCommands(&cmdBuilder);
         }
 
-        params.remotes.emplace_back(shard->getId(), cmdBuilder.obj());
+        params.remotes.emplace_back(shard.getId(), cmdBuilder.obj());
     }
 
     auto ccc = ClusterClientCursorImpl::make(
@@ -328,7 +328,7 @@ StatusWith<CursorId> ClusterFind::runQuery(OperationContext* txn,
     }
 
     std::shared_ptr<ChunkManager> chunkManager;
-    std::shared_ptr<Shard> primary;
+    boost::optional<Shard> primary;
     dbConfig.getValue()->getChunkManagerOrPrimary(txn, query.nss().ns(), chunkManager, primary);
 
     // Re-target and re-send the initial find command to the shards until we have established the

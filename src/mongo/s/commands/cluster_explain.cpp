@@ -222,7 +222,7 @@ void ClusterExplain::buildPlannerInfo(OperationContext* txn,
         {
             const auto shard =
                 uassertStatusOK(grid.shardRegistry()->getShard(txn, shardResults[i].shardTargetId));
-            singleShardBob.append("connectionString", shard->getConnString().toString());
+            singleShardBob.append("connectionString", shard.getConnString().toString());
         }
         appendIfRoom(&singleShardBob, serverInfo, "serverInfo");
         appendElementsIfRoom(&singleShardBob, queryPlanner);

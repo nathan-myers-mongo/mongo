@@ -30,11 +30,14 @@
 
 #include <map>
 
+#include <boost/optional.hpp>
+
 #include "mongo/bson/bsonobj.h"
 #include "mongo/bson/bsonobj_comparator_interface.h"
 #include "mongo/bson/simple_bsonobj_comparator.h"
 #include "mongo/db/namespace_string.h"
 #include "mongo/s/ns_targeter.h"
+#include "mongo/s/client/shard.h"
 
 namespace mongo {
 
@@ -174,7 +177,7 @@ private:
     // Zero or one of these are filled at all times
     // If sharded, _manager, if unsharded, _primary, on error, neither
     std::shared_ptr<ChunkManager> _manager;
-    std::shared_ptr<Shard> _primary;
+    boost::optional<Shard> _primary;
 
     // Map of shard->remote shard version reported from stale errors
     ShardVersionMap _remoteShardVersions;

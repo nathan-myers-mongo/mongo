@@ -96,14 +96,14 @@ BSONObj appendMaxTimeToCmdObj(Milliseconds maxTimeMSOverride, const BSONObj& cmd
 
 }  // unnamed namespace
 
-ShardRemote::ShardRemote(const ShardId& id,
-                         const ConnectionString& originalConnString,
-                         std::unique_ptr<RemoteCommandTargeter> targeter)
-    : Shard(id), _originalConnString(originalConnString), _targeter(targeter.release()) {}
+Shard::ImplRemote::ImplRemote(const ShardId& id,
+                              const ConnectionString& originalConnString,
+                              std::unique_ptr<RemoteCommandTargeter> targeter)
+    : Impl(id), _originalConnString(originalConnString), _targeter(targeter.release()) {}
 
-ShardRemote::~ShardRemote() = default;
+Shard::ImplRemote::~ImplRemote() = default;
 
-bool ShardRemote::isRetriableError(ErrorCodes::Error code, RetryPolicy options) {
+bool Shard::ImplRemote::isRetriableError(ErrorCodes::Error code, RetryPolicy options) {
     if (options == RetryPolicy::kNoRetry) {
         return false;
     }
@@ -114,12 +114,12 @@ bool ShardRemote::isRetriableError(ErrorCodes::Error code, RetryPolicy options) 
     return std::find(retriableErrors.begin(), retriableErrors.end(), code) != retriableErrors.end();
 }
 
-const ConnectionString ShardRemote::getConnString() const {
+ConnectionString Shard::ImplRemote::getConnString() const {
     return _targeter->connectionString();
 }
 
 // Any error code changes should possibly also be made to Shard::shouldErrorBePropagated!
-void ShardRemote::updateReplSetMonitor(const HostAndPort& remoteHost,
+void Shard::ImplRemote::updateReplSetMonitor(const HostAndPort& remoteHost,
                                        const Status& remoteCommandStatus) {
     if (remoteCommandStatus.isOK())
         return;
@@ -137,11 +137,11 @@ void ShardRemote::updateReplSetMonitor(const HostAndPort& remoteHost,
     }
 }
 
-std::string ShardRemote::toString() const {
+std::string Shard::ImplRemote::toString() const {
     return getId().toString() + ":" + _originalConnString.toString();
 }
 
-BSONObj ShardRemote::_appendMetadataForCommand(OperationContext* txn,
+BSONObj Shard::ImplRemote::_appendMetadataForCommand(OperationContext* txn,
                                                const ReadPreferenceSetting& readPref) {
     BSONObjBuilder builder;
     if (logger::globalLogDomain()->shouldLog(
@@ -175,7 +175,8 @@ BSONObj ShardRemote::_appendMetadataForCommand(OperationContext* txn,
     return builder.obj();
 }
 
-Shard::HostWithResponse ShardRemote::_runCommand(OperationContext* txn,
+Shard::ImplRemote::HostWithResponse
+Shard::ImplRemote::_runCommand(OperationContext* txn,
                                                  const ReadPreferenceSetting& readPref,
                                                  const string& dbName,
                                                  Milliseconds maxTimeMSOverride,
@@ -187,7 +188,7 @@ Shard::HostWithResponse ShardRemote::_runCommand(OperationContext* txn,
     }
     const auto host = _targeter->findHost(txn, readPrefWithMinOpTime);
     if (!host.isOK()) {
-        return Shard::HostWithResponse(boost::none, host.getStatus());
+        return HostWithResponse(boost::none, host.getStatus());
     }
 
     const Milliseconds requestTimeout =
@@ -209,7 +210,7 @@ Shard::HostWithResponse ShardRemote::_runCommand(OperationContext* txn,
         request,
         [&swResponse](const RemoteCommandCallbackArgs& args) { swResponse = args.response; });
     if (!callStatus.isOK()) {
-        return Shard::HostWithResponse(host.getValue(), callStatus.getStatus());
+        return HostWithResponse(host.getValue(), callStatus.getStatus());
     }
 
     // Block until the command is carried out
@@ -221,7 +222,7 @@ Shard::HostWithResponse ShardRemote::_runCommand(OperationContext* txn,
         if (swResponse.status.compareCode(ErrorCodes::ExceededTimeLimit)) {
             LOG(0) << "Operation timed out with status " << redact(swResponse.status);
         }
-        return Shard::HostWithResponse(host.getValue(), swResponse.status);
+        return HostWithResponse(host.getValue(), swResponse.status);
     }
 
     BSONObj responseObj = swResponse.data.getOwned();
@@ -233,14 +234,14 @@ Shard::HostWithResponse ShardRemote::_runCommand(OperationContext* txn,
     updateReplSetMonitor(host.getValue(), commandStatus);
     updateReplSetMonitor(host.getValue(), writeConcernStatus);
 
-    return Shard::HostWithResponse(host.getValue(),
+    return HostWithResponse(host.getValue(),
                                    CommandResponse(std::move(responseObj),
                                                    std::move(responseMetadata),
                                                    std::move(commandStatus),
                                                    std::move(writeConcernStatus)));
 }
 
-StatusWith<Shard::QueryResponse> ShardRemote::_exhaustiveFindOnConfig(
+StatusWith<Shard::QueryResponse> Shard::ImplRemote::_exhaustiveFindOnConfig(
     OperationContext* txn,
     const ReadPreferenceSetting& readPref,
     const repl::ReadConcernLevel& readConcernLevel,
@@ -300,8 +301,7 @@ StatusWith<Shard::QueryResponse> ShardRemote::_exhaustiveFindOnConfig(
 
             if (!getMoreBob) {
                 return;
-            }
-            getMoreBob->append("getMore", data.cursorId);
+            } getMoreBob->append("getMore", data.cursorId);
             getMoreBob->append("collection", data.nss.coll());
         };
 
@@ -316,7 +316,7 @@ StatusWith<Shard::QueryResponse> ShardRemote::_exhaustiveFindOnConfig(
     }
 
     const Milliseconds maxTimeMS =
-        std::min(txn->getRemainingMaxTimeMillis(), kDefaultConfigCommandTimeout);
+        std::min(txn->getRemainingMaxTimeMillis(), Shard::kDefaultConfigCommandTimeout);
 
     BSONObjBuilder findCmdBuilder;
 
@@ -360,7 +360,7 @@ StatusWith<Shard::QueryResponse> ShardRemote::_exhaustiveFindOnConfig(
     return response;
 }
 
-Status ShardRemote::createIndexOnConfig(OperationContext* txn,
+Status Shard::ImplRemote::createIndexOnConfig(OperationContext* txn,
                                         const NamespaceString& ns,
                                         const BSONObj& keys,
                                         bool unique) {

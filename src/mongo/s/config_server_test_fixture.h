@@ -52,7 +52,7 @@ public:
     ConfigServerTestFixture();
     ~ConfigServerTestFixture();
 
-    std::shared_ptr<Shard> getConfigShard() const;
+    Shard getConfigShard() const;
 
     /**
      * Insert a document to this config server to the specified namespace.

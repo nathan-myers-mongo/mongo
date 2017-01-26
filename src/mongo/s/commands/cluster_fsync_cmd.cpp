@@ -93,7 +93,7 @@ public:
             }
             const auto s = shardStatus.getValue();
 
-            auto response = uassertStatusOK(s->runCommandWithFixedRetryAttempts(
+            auto response = uassertStatusOK(s.runCommandWithFixedRetryAttempts(
                 txn,
                 ReadPreferenceSetting{ReadPreference::PrimaryOnly},
                 "admin",
@@ -102,7 +102,7 @@ public:
             uassertStatusOK(response.commandStatus);
             BSONObj x = std::move(response.response);
 
-            sub.append(s->getId().toString(), x);
+            sub.append(s.getId().toString(), x);
 
             if (!x["ok"].trueValue()) {
                 ok = false;
