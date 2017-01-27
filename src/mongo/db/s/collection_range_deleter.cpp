@@ -76,7 +76,9 @@ void CollectionRangeDeleter::run() {
     Client::initThread(getThreadName().c_str());
     ON_BLOCK_EXIT([&] { Client::destroy(); });
     auto txn = cc().makeOperationContext().get();
-    bool hasNextRangeToClean = cleanupNextRange(txn);
+
+    const int maxToDelete = std::max(int(internalQueryExecYieldIterations.load()), 1);
+    bool hasNextRangeToClean = cleanupNextRange(txn, maxToDelete);
 
     // If there are more ranges to run, we add <this> back onto the task executor to run again.
     if (hasNextRangeToClean) {
@@ -87,7 +89,8 @@ void CollectionRangeDeleter::run() {
     }
 }
 
-bool CollectionRangeDeleter::cleanupNextRange(OperationContext* txn) {
+bool CollectionRangeDeleter::cleanupNextRange(OperationContext* txn, int maxToDelete) {
+
     {
         AutoGetCollection autoColl(txn, _nss, MODE_IX);
         Collection* collection = autoColl.getCollection();
@@ -116,7 +119,8 @@ bool CollectionRangeDeleter::cleanupNextRange(OperationContext* txn) {
             return false;
         }
 
-        int numDocumentsDeleted = _doDeletion(txn, collection, metadata->getKeyPattern());
+        int numDocumentsDeleted =
+            _doDeletion(txn, collection, metadata->getKeyPattern(), maxToDelete);
         if (numDocumentsDeleted <= 0) {
             metadataManager->removeRangeToClean(_rangeInProgress.get());
             _rangeInProgress = boost::none;
@@ -138,7 +142,8 @@ bool CollectionRangeDeleter::cleanupNextRange(OperationContext* txn) {
 
 int CollectionRangeDeleter::_doDeletion(OperationContext* txn,
                                         Collection* collection,
-                                        const BSONObj& keyPattern) {
+                                        const BSONObj& keyPattern
+                                        int maxToDelete) {
     invariant(_rangeInProgress);
     invariant(collection);
 
@@ -171,9 +176,6 @@ int CollectionRangeDeleter::_doDeletion(OperationContext* txn,
     }
 
     int numDeleted = 0;
-    const int maxItersBeforeYield =
-        std::max(static_cast<int>(internalQueryExecYieldIterations.load()), 1);
-
     do {
         auto exec = InternalPlanner::indexScan(txn, collection, desc, min, max,
                                                BoundInclusion::kIncludeStartKeyOnly,
@@ -204,7 +206,7 @@ int CollectionRangeDeleter::_doDeletion(OperationContext* txn,
         OpDebug* const nullOpDebug = nullptr;
         collection->deleteDocument(txn, rloc, nullOpDebug, true);
         wuow.commit();
-    } while (++numDeleted <= maxItersBeforeYield);
+    } while (++numDeleted <= maxToDelete);
     return numDeleted;
 }
 
