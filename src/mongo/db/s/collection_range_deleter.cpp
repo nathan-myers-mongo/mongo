@@ -142,7 +142,7 @@ bool CollectionRangeDeleter::cleanupNextRange(OperationContext* txn, int maxToDe
 
 int CollectionRangeDeleter::_doDeletion(OperationContext* txn,
                                         Collection* collection,
-                                        const BSONObj& keyPattern
+                                        const BSONObj& keyPattern,
                                         int maxToDelete) {
     invariant(_rangeInProgress);
     invariant(collection);
