@@ -131,7 +131,8 @@ bool CollectionRangeDeleter::cleanupNextRange(OperationContext* txn, int maxToDe
     // wait for replication
     WriteConcernResult wcResult;
     auto currentClientOpTime = repl::ReplClientInfo::forClient(txn->getClient()).getLastOp();
-    Status status = waitForWriteConcern(txn, currentClientOpTime, kMajorityWriteConcern, &wcResult);
+    Status status =
+        waitForWriteConcern(txn, currentClientOpTime, kMajorityWriteConcern, &wcResult);
     if (!status.isOK()) {
         warning() << "Error when waiting for write concern after removing chunks in " << _nss
                   << " : " << status.reason();
@@ -175,14 +176,19 @@ int CollectionRangeDeleter::_doDeletion(OperationContext* txn,
         return -1;
     }
 
+    auto exec = InternalPlanner::indexScan(txn,
+                                           collection,
+                                           desc,
+                                           min,
+                                           max,
+                                           BoundInclusion::kIncludeStartKeyOnly,
+                                           PlanExecutor::YIELD_MANUAL,
+                                           InternalPlanner::FORWARD,
+                                           InternalPlanner::IXSCAN_FETCH);
     int numDeleted = 0;
     do {
-        auto exec = InternalPlanner::indexScan(txn, collection, desc, min, max,
-                                               BoundInclusion::kIncludeStartKeyOnly,
-                                               PlanExecutor::YIELD_MANUAL,
-                                               InternalPlanner::FORWARD,
-                                               InternalPlanner::IXSCAN_FETCH);
-        RecordId rloc; BSONObj obj;
+        RecordId rloc;
+        BSONObj obj;
         PlanExecutor::ExecState state = exec->getNext(&obj, &rloc);
         if (state == PlanExecutor::IS_EOF) {
             break;
@@ -191,8 +197,8 @@ int CollectionRangeDeleter::_doDeletion(OperationContext* txn,
             warning(LogComponent::kSharding)
                 << PlanExecutor::statestr(state) << " - cursor error while trying to delete "
                 << min << " to " << max << " in " << _nss << ": "
-                << WorkingSetCommon::toStatusString(obj) << ", stats: "
-                << Explain::getWinningPlanStats(exec.get());
+                << WorkingSetCommon::toStatusString(obj)
+                << ", stats: " << Explain::getWinningPlanStats(exec.get());
             break;
         }
 
