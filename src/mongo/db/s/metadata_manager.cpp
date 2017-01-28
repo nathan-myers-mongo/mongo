@@ -271,7 +271,7 @@ void MetadataManager::_removeMetadata_inlock(CollectionMetadataTracker* metadata
 
     auto const e = _metadataInUse.end();
     auto const it = std::find_if(_metadataInUse.begin(), e,
-            [=](std::unique_ptr<CollectionMetadataTracker> const& t) { return t.get() == metadataTracker; });
+            [=](auto const& t) { return t.get() == metadataTracker; });
     if (it != e) {
         _metadataInUse.erase(it);
     }
