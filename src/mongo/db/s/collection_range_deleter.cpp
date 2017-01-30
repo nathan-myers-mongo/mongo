@@ -131,8 +131,7 @@ bool CollectionRangeDeleter::cleanupNextRange(OperationContext* txn, int maxToDe
     // wait for replication
     WriteConcernResult wcResult;
     auto currentClientOpTime = repl::ReplClientInfo::forClient(txn->getClient()).getLastOp();
-    Status status =
-        waitForWriteConcern(txn, currentClientOpTime, kMajorityWriteConcern, &wcResult);
+    Status status = waitForWriteConcern(txn, currentClientOpTime, kMajorityWriteConcern, &wcResult);
     if (!status.isOK()) {
         warning() << "Error when waiting for write concern after removing chunks in " << _nss
                   << " : " << status.reason();
@@ -195,9 +194,8 @@ int CollectionRangeDeleter::_doDeletion(OperationContext* txn,
         }
         if (state == PlanExecutor::FAILURE || state == PlanExecutor::DEAD) {
             warning(LogComponent::kSharding)
-                << PlanExecutor::statestr(state) << " - cursor error while trying to delete "
-                << min << " to " << max << " in " << _nss << ": "
-                << WorkingSetCommon::toStatusString(obj)
+                << PlanExecutor::statestr(state) << " - cursor error while trying to delete " << min
+                << " to " << max << " in " << _nss << ": " << WorkingSetCommon::toStatusString(obj)
                 << ", stats: " << Explain::getWinningPlanStats(exec.get());
             break;
         }
