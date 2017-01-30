@@ -176,20 +176,15 @@ int CollectionRangeDeleter::_doDeletion(OperationContext* txn,
         return -1;
     }
 
-    auto exec = InternalPlanner::indexScan(txn,
-                                           collection,
-                                           desc,
-                                           min,
-                                           max,
-                                           BoundInclusion::kIncludeStartKeyOnly,
-                                           PlanExecutor::YIELD_MANUAL,
-                                           InternalPlanner::FORWARD,
-                                           InternalPlanner::IXSCAN_FETCH);
+    auto exec = InternalPlanner::indexScan(
+        txn, collection, desc, min, max, BoundInclusion::kIncludeStartKeyOnly,
+        PlanExecutor::YIELD_MANUAL, InternalPlanner::FORWARD, InternalPlanner::IXSCAN_FETCH);
+
     int numDeleted = 0;
     do {
         RecordId rloc;
         BSONObj obj;
-        PlanExecutor::ExecState state = exec->getNext(&obj, &rloc);
+        auto state = exec->getNext(&obj, &rloc);
         if (state == PlanExecutor::IS_EOF) {
             break;
         }
@@ -201,17 +196,18 @@ int CollectionRangeDeleter::_doDeletion(OperationContext* txn,
                 << ", stats: " << Explain::getWinningPlanStats(exec.get());
             break;
         }
-
         invariant(PlanExecutor::ADVANCED == state);
-        WriteUnitOfWork wuow(txn);
-        if (!repl::getGlobalReplicationCoordinator()->canAcceptWritesFor(_nss)) {
-            warning() << "stepped down from primary while deleting chunk; orphaning data in "
-                      << _nss << " in range [" << min << ", " << max << ")";
-            break;
+        {
+            WriteUnitOfWork wuow(txn);
+            if (!repl::getGlobalReplicationCoordinator()->canAcceptWritesFor(_nss)) {
+                warning() << "stepped down from primary while deleting chunk; orphaning data in "
+                          << _nss << " in range [" << min << ", " << max << ")";
+                break;
+            }
+            OpDebug* const nullOpDebug = nullptr;
+            collection->deleteDocument(txn, rloc, nullOpDebug, true);
+            wuow.commit();
         }
-        OpDebug* const nullOpDebug = nullptr;
-        collection->deleteDocument(txn, rloc, nullOpDebug, true);
-        wuow.commit();
     } while (++numDeleted <= maxToDelete);
     return numDeleted;
 }
