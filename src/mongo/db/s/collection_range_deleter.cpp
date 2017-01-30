@@ -176,10 +176,15 @@ int CollectionRangeDeleter::_doDeletion(OperationContext* txn,
         return -1;
     }
 
-    auto exec = InternalPlanner::indexScan(
-        txn, collection, desc, min, max, BoundInclusion::kIncludeStartKeyOnly,
-        PlanExecutor::YIELD_MANUAL, InternalPlanner::FORWARD, InternalPlanner::IXSCAN_FETCH);
-
+    auto exec = InternalPlanner::indexScan(txn,
+                                           collection,
+                                           desc,
+                                           min,
+                                           max,
+                                           BoundInclusion::kIncludeStartKeyOnly,
+                                           PlanExecutor::YIELD_MANUAL,
+                                           InternalPlanner::FORWARD,
+                                           InternalPlanner::IXSCAN_FETCH);
     int numDeleted = 0;
     do {
         RecordId rloc;

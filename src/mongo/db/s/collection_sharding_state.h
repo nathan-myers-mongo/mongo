@@ -124,27 +124,27 @@ public:
     MigrationSourceManager* getMigrationSourceManager();
 
     /**
-     * Attaches a migration source manager to this collection's sharding state. Must be called with
-     * collection X lock. May not be called if there is a migration source manager already
+     * Attaches a migration source manager to this collection's sharding state. Must be called
+     * with collection X lock. May not be called if there is a migration source manager already
      * installed. Must be followed by a call to clearMigrationSourceManager.
      */
     void setMigrationSourceManager(OperationContext* txn, MigrationSourceManager* sourceMgr);
 
     /**
-     * Removes a migration source manager from this collection's sharding state. Must be called with
-     * collection X lock. May not be called if there isn't a migration source manager installed
-     * already through a previous call to setMigrationSourceManager.
+     * Removes a migration source manager from this collection's sharding state. Must be called
+     * with collection X lock. May not be called if there isn't a migration source manager
+     * installed already through a previous call to setMigrationSourceManager.
      */
     void clearMigrationSourceManager(OperationContext* txn);
 
     /**
      * Checks whether the shard version in the context is compatible with the shard version of the
-     * collection locally and if not throws SendStaleConfigException populated with the expected and
-     * actual versions.
+     * collection locally and if not throws SendStaleConfigException populated with the expected
+     * and actual versions.
      *
      * Because SendStaleConfigException has special semantics in terms of how a sharded command's
-     * response is constructed, this function should be the only means of checking for shard version
-     * match.
+     * response is constructed, this function should be the only means of checking for shard
+     * version match.
      */
     void checkShardVersionOrThrow(OperationContext* txn);
 
@@ -179,8 +179,8 @@ private:
      *
      * txn - Operation context from which to retrieve the operation's expected version.
      * errmsg (out) - On false return contains an explanatory error message.
-     * expectedShardVersion (out) - On false return contains the expected collection version on this
-     *  shard. Obtained from the operation sharding state.
+     * expectedShardVersion (out) - On false return contains the expected collection version on
+     *  this shard. Obtained from the operation sharding state.
      * actualShardVersion (out) - On false return contains the actual collection version on this
      *  shard. Obtained from the collection sharding state.
      *

@@ -49,9 +49,9 @@ public:
     void run();
 
     /**
-     * Acquires the collection IX lock and checks whether there are new entries for the collection's
-     * rangesToClean structure.  If there are, deletes up to maxToDelete entries and yields using
-     * the standard query yielding logic.
+     * Acquires the collection IX lock and checks whether there are new entries for the
+     * collection's rangesToClean structure.  If there are, deletes up to maxToDelete entries and
+     * yields using the standard query yielding logic.
      *
      * Returns true if there are more entries in rangesToClean, false if there is no more progress
      * to be made.
@@ -65,8 +65,10 @@ private:
      *
      * Returns the number of documents deleted (0 if deletion is finished), or -1 for error.
      */
-    int _doDeletion(
-        OperationContext* txn, Collection* cln, const BSONObj& keyPattern, int maxToDelete);
+    int _doDeletion(OperationContext* txn,
+                    Collection* cln,
+                    const BSONObj& keyPattern,
+                    int maxToDelete);
 
     NamespaceString _nss;
 
