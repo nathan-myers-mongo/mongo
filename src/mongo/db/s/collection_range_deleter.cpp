@@ -99,7 +99,7 @@ bool CollectionRangeDeleter::cleanupNextRange(OperationContext* txn, int maxToDe
         }
 
         CollectionShardingState* shardingState = CollectionShardingState::get(txn, _nss);
-        MetadataManager* metadataManager = shardingState->getMetadataManager();
+        MetadataManager* metadataManager = &shardingState._metadataManager();
 
         if (!_rangeInProgress && !metadataManager->hasRangesToClean()) {
             // Nothing left to do
@@ -114,12 +114,12 @@ bool CollectionRangeDeleter::cleanupNextRange(OperationContext* txn, int maxToDe
             _rangeInProgress = metadataManager->getNextRangeToClean();
         }
 
-        auto metadata = shardingState->getMetadata();
+        auto const metadata = shardingState->getMetadata();
         if (!metadata) {
             return false;
         }
 
-        int numDocumentsDeleted =
+        int const numDocumentsDeleted =
             _doDeletion(txn, collection, metadata->getKeyPattern(), maxToDelete);
         if (numDocumentsDeleted <= 0) {
             metadataManager->removeRangeToClean(_rangeInProgress.get());

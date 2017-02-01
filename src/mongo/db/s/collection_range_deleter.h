@@ -70,7 +70,7 @@ private:
                     const BSONObj& keyPattern,
                     int maxToDelete);
 
-    NamespaceString _nss;
+    NamespaceString const _nss;
 
     // Holds a range for which deletion has begun. If empty, then a new range
     // must be requested from rangesToClean
