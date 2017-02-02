@@ -173,7 +173,7 @@ public:
      * Returns boost::none if no more ranges are ready to clean up; otherwise, returns the range to
      * clean on the next round.
      */
-    boost::optional<ChunkRange> cleanNextRange(
+    boost::optional<ChunkRange> clearSome(
         OperationContext* txn,
         boost::optional<ChunkRange> inProgress,
         std::function<int (Collection*, ChunkRange, BSONObj)> deleter);

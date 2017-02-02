@@ -56,7 +56,7 @@ public:
      * Returns true if there are more entries in rangesToClean, false if there is no more progress
      * to be made.
      */
-    bool cleanNextRange(OperationContext* txn, int maxToDelete);
+    bool clearSome(OperationContext* txn, int maxToDelete);
 
 private:
     /**

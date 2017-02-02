@@ -33,9 +33,13 @@
 #include "mongo/db/s/collection_sharding_state.h"
 
 #include "mongo/db/client.h"
+#include "mongo/db/db_raii.h"
+#include "mongo/db/write_concern.h"
+#include "mongo/db/write_concern_options.h"
 #include "mongo/db/concurrency/lock_state.h"
 #include "mongo/db/operation_context.h"
 #include "mongo/db/repl/replication_coordinator_global.h"
+#include "mongo/db/repl/repl_client_info.h"
 #include "mongo/db/s/collection_metadata.h"
 #include "mongo/db/s/migration_chunk_cloner_source.h"
 #include "mongo/db/s/migration_source_manager.h"
@@ -58,6 +62,10 @@
 namespace mongo {
 
 namespace {
+
+const WriteConcernOptions kMajorityWriteConcern(WriteConcernOptions::kMajority,
+                                                WriteConcernOptions::SyncMode::UNSET,
+                                                Seconds(60));
 
 /**
  * Used to perform shard identity initialization once it is certain that the document is committed.
@@ -376,7 +384,7 @@ bool CollectionShardingState::_checkShardVersionOk(OperationContext* txn,
     MONGO_UNREACHABLE;
 }
 
-boost::optional<ChunkRange> CollectionShardingState::clearNextRange(
+boost::optional<ChunkRange> CollectionShardingState::clearSome(
         OperationContext* txn,
         boost::optional<ChunkRange> inProgress,
         std::function<int(Collection*, ChunkRange, BSONObj)> deleter) {
@@ -390,16 +398,17 @@ boost::optional<ChunkRange> CollectionShardingState::clearNextRange(
             // Nothing left to do
             return boost::none;
         }
-        if (!inProgress || !metadataManager.isInRangesToClean(*inProgress)) {
+        if (!inProgress || !_metadataManager.isInRangesToClean(*inProgress)) {
             // No valid chunk in progress, try to get a new one
-            if (!_metadataManager->hasRangesToClean()) {
+            if (!_metadataManager.hasRangesToClean()) {
                 return boost::none;
             }
             inProgress = _metadataManager.getNextRangeToClean();
         }
         invariant(inProgress);
 
-        int numDeleted = deleter(collection, *inProgress, _metadata.keyPattern);
+        int numDeleted = deleter(collection, *inProgress, getMetadata()->getKeyPattern());
+
         if (numDeleted <= 0) {
             _metadataManager.removeRangeToClean(*inProgress);
             inProgress = _metadataManager.getNextRangeToClean();

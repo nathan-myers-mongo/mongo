@@ -62,14 +62,6 @@ class OldClientWriteContext;
 using CallbackArgs = executor::TaskExecutor::CallbackArgs;
 using logger::LogComponent;
 
-namespace {
-
-const WriteConcernOptions kMajorityWriteConcern(WriteConcernOptions::kMajority,
-                                                WriteConcernOptions::SyncMode::UNSET,
-                                                Seconds(60));
-
-}  // unnamed namespace
-
 CollectionRangeDeleter::CollectionRangeDeleter(NamespaceString nss) : _nss(std::move(nss)) {}
 
 void CollectionRangeDeleter::run() {
@@ -78,10 +70,10 @@ void CollectionRangeDeleter::run() {
     auto txn = cc().makeOperationContext().get();
 
     const int maxToDelete = std::max(int(internalQueryExecYieldIterations.load()), 1);
-    bool hasNextRangeToClean = cleanNextRange(txn, maxToDelete);
+    bool hasWork = clearSome(txn, maxToDelete);
 
     // If there are more ranges to run, we add <this> back onto the task executor to run again.
-    if (hasNextRangeToClean) {
+    if (hasWork) {
         auto executor = ShardingState::get(txn)->getRangeDeleterTaskExecutor();
         executor->scheduleWork([this](const CallbackArgs& cbArgs) { run(); });
     } else {
@@ -89,13 +81,13 @@ void CollectionRangeDeleter::run() {
     }
 }
 
-bool CollectionRangeDeleter::cleanNextRange(OperationContext* txn, int maxToDelete) {
+bool CollectionRangeDeleter::clearSome(OperationContext* txn, int maxToDelete) {
 
     auto shardingState = CollectionShardingState::get(txn, _nss);
 
-    _rangeInProgress = shardingState->cleanNextRange(txn, _rangeInProgress,
-        [&](Collection* coll, ChunkRange range, BSONObj keyPattern) {
-             return _deleteSome(txn, coll, range, KeyPattern, maxToDelete);
+    _rangeInProgress = shardingState->clearSome(txn, _rangeInProgress,
+        [=](Collection* coll, ChunkRange range, BSONObj keyPattern) {
+            return _deleteSome(txn, coll, range, keyPattern, maxToDelete); 
     });
     if (!_rangeInProgress) {
         return false;  // do not immediately schedule any more cleanup
@@ -121,12 +113,12 @@ int CollectionRangeDeleter::_deleteSome(OperationContext* txn,
     }
 
     // Extend bounds to match the index we found
-    KeyPattern const indexKeyPattern(idx->keyPattern().getOwned());
+    KeyPattern const indexKeyPattern = idx->keyPattern().getOwned();
     auto extendRange = [&indexKeyPattern](auto bound) {
         return Helpers::toKeyFormat(indexKeyPattern.extendRangeBound(bound, false));
     };
-    BSONObj const min = extendRange(range->getMin()), ;
-    BSONObj const max = extendRange(range->getMax());
+    BSONObj const min = extendRange(range.getMin());
+    BSONObj const max = extendRange(range.getMax());
 
     LOG(1) << "begin removal of " << min << " to " << max << " in " << _nss;
 
