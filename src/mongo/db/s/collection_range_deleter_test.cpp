@@ -56,9 +56,10 @@ const ChunkRange kChunkRange = ChunkRange(BSON(kPattern << 0), BSON(kPattern << 
 class CollectionRangeDeleterTest : public ServiceContextMongoDTest {
 protected:
     ServiceContext::UniqueOperationContext _opCtx;
-    MetadataManager* _migrationManager;
     std::unique_ptr<DBDirectClient> _dbDirectClient;
     std::unique_ptr<CollectionRangeDeleter> _rangeDeleter;
+    CollectionShardingState* _shardingState;
+    MetadataManager* _metadataManager;
 
     OperationContext* operationContext();
 
@@ -75,19 +76,14 @@ void CollectionRangeDeleterTest::setUp() {
     _dbDirectClient = stdx::make_unique<DBDirectClient>(operationContext());
     _rangeDeleter = stdx::make_unique<CollectionRangeDeleter>(kNamespaceString);
     AutoGetCollection autoColl(operationContext(), kNamespaceString, MODE_IX);
-    auto collectionShardingState =
-        CollectionShardingState::get(operationContext(), kNamespaceString);
-    collectionShardingState->refreshMetadata(
+    _shardingState = CollectionShardingState::get(operationContext(), kNamespaceString);
+    _shardingState->refreshMetadata(
         operationContext(),
         stdx::make_unique<CollectionMetadata>(kKeyPattern, ChunkVersion(1, 1, OID::gen())));
-    _migrationManager = collectionShardingState->getMetadataManager();
+    _metadataManager = &_shardingState.metadataManager;
 }
 
 void CollectionRangeDeleterTest::tearDown() {
-    {
-        AutoGetCollection autoColl(operationContext(), kNamespaceString, MODE_IX);
-        ShardingState::get(operationContext())->resetMetadata(kNamespaceString.toString());
-    }
     _rangeDeleter.reset();
     _dbDirectClient.reset();
     _opCtx.reset();
@@ -110,14 +106,14 @@ TEST_F(CollectionRangeDeleterTest, NoDataInGivenRangeToClean) {
     const BSONObj insertedDoc = BSON(kPattern << 25);
 
     _dbDirectClient->insert(kNamespaceString.toString(), insertedDoc);
-    ASSERT_EQUALS(insertedDoc,
-                  _dbDirectClient->findOne(kNamespaceString.toString(), QUERY(kPattern << 25)));
+    ASSERT_BSONOBJ_EQ(insertedDoc,
+                      _dbDirectClient->findOne(kNamespaceString.toString(), QUERY(kPattern << 25)));
 
     _migrationManager->addRangeToClean(kChunkRange);
     ASSERT_FALSE(_rangeDeleter->cleanupNextRange(operationContext(), 1));
 
-    ASSERT_EQUALS(insertedDoc,
-                  _dbDirectClient->findOne(kNamespaceString.toString(), QUERY(kPattern << 25)));
+    ASSERT_BSONOBJ_EQ(insertedDoc,
+                      _dbDirectClient->findOne(kNamespaceString.toString(), QUERY(kPattern << 25)));
 }
 
 // Tests the case that there is a single document within a range to clean.
@@ -125,8 +121,8 @@ TEST_F(CollectionRangeDeleterTest, OneDocumentInOneRangeToClean) {
     const BSONObj insertedDoc = BSON(kPattern << 5);
 
     _dbDirectClient->insert(kNamespaceString.toString(), BSON(kPattern << 5));
-    ASSERT_EQUALS(insertedDoc,
-                  _dbDirectClient->findOne(kNamespaceString.toString(), QUERY(kPattern << 5)));
+    ASSERT_BSONOBJ_EQ(insertedDoc,
+                      _dbDirectClient->findOne(kNamespaceString.toString(), QUERY(kPattern << 5)));
 
     _migrationManager->addRangeToClean(kChunkRange);
 
@@ -243,7 +239,7 @@ TEST_F(CollectionRangeDeleterTest, MultipleCallstoCleanupNextRangeWithChunkRecei
 
     ASSERT_FALSE(_rangeDeleter->cleanupNextRange(operationContext(), 2));
 
-    ASSERT_EQUALS(
+    ASSERT_BSON_EQ(
         insertedDoc5,
         _dbDirectClient->findOne(kNamespaceString.toString(), QUERY(kPattern << GT << 0)));
 }
@@ -262,7 +258,7 @@ TEST_F(CollectionRangeDeleterTest, CalltoCleanupNextRangeWithChunkReceive) {
     ASSERT_EQUALS(2ULL,
                   _dbDirectClient->count(kNamespaceString.toString(), BSON(kPattern << LT << 10)));
 
-    _migrationManager->beginReceive(kChunkRange);
+    _shardingState->beginReceive(kChunkRange);
 
     ASSERT_FALSE(_rangeDeleter->cleanupNextRange(operationContext(), 2));
 

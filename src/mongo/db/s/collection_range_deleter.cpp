@@ -78,7 +78,7 @@ void CollectionRangeDeleter::run() {
     auto txn = cc().makeOperationContext().get();
 
     const int maxToDelete = std::max(int(internalQueryExecYieldIterations.load()), 1);
-    bool hasNextRangeToClean = cleanupNextRange(txn, maxToDelete);
+    bool hasNextRangeToClean = cleanNextRange(txn, maxToDelete);
 
     // If there are more ranges to run, we add <this> back onto the task executor to run again.
     if (hasNextRangeToClean) {
@@ -89,88 +89,51 @@ void CollectionRangeDeleter::run() {
     }
 }
 
-bool CollectionRangeDeleter::cleanupNextRange(OperationContext* txn, int maxToDelete) {
+bool CollectionRangeDeleter::cleanNextRange(OperationContext* txn, int maxToDelete) {
 
-    {
-        AutoGetCollection autoColl(txn, _nss, MODE_IX);
-        Collection* collection = autoColl.getCollection();
-        if (!collection) {
-            return false;
-        }
+    auto shardingState = CollectionShardingState::get(txn, _nss);
 
-        CollectionShardingState* shardingState = CollectionShardingState::get(txn, _nss);
-        MetadataManager* metadataManager = &shardingState._metadataManager();
-
-        if (!_rangeInProgress && !metadataManager->hasRangesToClean()) {
-            // Nothing left to do
-            return false;
-        }
-
-        if (!_rangeInProgress || !metadataManager->isInRangesToClean(_rangeInProgress.get())) {
-            // No valid chunk in progress, get a new one
-            if (!metadataManager->hasRangesToClean()) {
-                return false;
-            }
-            _rangeInProgress = metadataManager->getNextRangeToClean();
-        }
-
-        auto const metadata = shardingState->getMetadata();
-        if (!metadata) {
-            return false;
-        }
-
-        int const numDocumentsDeleted =
-            _doDeletion(txn, collection, metadata->getKeyPattern(), maxToDelete);
-        if (numDocumentsDeleted <= 0) {
-            metadataManager->removeRangeToClean(_rangeInProgress.get());
-            _rangeInProgress = boost::none;
-            return metadataManager->hasRangesToClean();
-        }
+    _rangeInProgress = shardingState->cleanNextRange(txn, _rangeInProgress,
+        [&](Collection* coll, ChunkRange range, BSONObj keyPattern) {
+             return _deleteSome(txn, coll, range, KeyPattern, maxToDelete);
+    });
+    if (!_rangeInProgress) {
+        return false;  // do not immediately schedule any more cleanup
     }
-
-    // wait for replication
-    WriteConcernResult wcResult;
-    auto currentClientOpTime = repl::ReplClientInfo::forClient(txn->getClient()).getLastOp();
-    Status status = waitForWriteConcern(txn, currentClientOpTime, kMajorityWriteConcern, &wcResult);
-    if (!status.isOK()) {
-        warning() << "Error when waiting for write concern after removing chunks in " << _nss
-                  << " : " << status.reason();
-    }
-
     return true;
 }
 
-int CollectionRangeDeleter::_doDeletion(OperationContext* txn,
+int CollectionRangeDeleter::_deleteSome(OperationContext* txn,
                                         Collection* collection,
+                                        ChunkRange range,
                                         const BSONObj& keyPattern,
                                         int maxToDelete) {
-    invariant(_rangeInProgress);
     invariant(collection);
 
     // The IndexChunk has a keyPattern that may apply to more than one index - we need to
     // select the index and get the full index keyPattern here.
-    const IndexDescriptor* idx =
+    IndexDescriptor const* idx =
         collection->getIndexCatalog()->findShardKeyPrefixedIndex(txn, keyPattern, false);
-    if (idx == NULL) {
-        warning() << "Unable to find shard key index for " << keyPattern.toString() << " in "
-                  << _nss;
+    if (idx == nullptr) {
+        log() << "Unable to find shard key index for " << keyPattern.toString() << " in "
+              << _nss;
         return -1;
     }
 
-    KeyPattern indexKeyPattern(idx->keyPattern().getOwned());
-
     // Extend bounds to match the index we found
-    const BSONObj& min =
-        Helpers::toKeyFormat(indexKeyPattern.extendRangeBound(_rangeInProgress->getMin(), false));
-    const BSONObj& max =
-        Helpers::toKeyFormat(indexKeyPattern.extendRangeBound(_rangeInProgress->getMax(), false));
+    KeyPattern const indexKeyPattern(idx->keyPattern().getOwned());
+    auto extendRange = [&indexKeyPattern](auto bound) {
+        return Helpers::toKeyFormat(indexKeyPattern.extendRangeBound(bound, false));
+    };
+    BSONObj const min = extendRange(range->getMin()), ;
+    BSONObj const max = extendRange(range->getMax());
 
     LOG(1) << "begin removal of " << min << " to " << max << " in " << _nss;
 
-    auto indexName = idx->indexName();
-    IndexDescriptor* desc = collection->getIndexCatalog()->findIndexByName(txn, indexName);
+    auto const indexName = idx->indexName();
+    IndexDescriptor const* desc = collection->getIndexCatalog()->findIndexByName(txn, indexName);
     if (!desc) {
-        warning() << "shard key index with name " << indexName << " on '" << _nss
+        log() << "shard key index with name " << indexName << " on '" << _nss
                   << "' was dropped";
         return -1;
     }
@@ -193,7 +156,7 @@ int CollectionRangeDeleter::_doDeletion(OperationContext* txn,
             break;
         }
         if (state == PlanExecutor::FAILURE || state == PlanExecutor::DEAD) {
-            warning(LogComponent::kSharding)
+            log(LogComponent::kSharding)
                 << PlanExecutor::statestr(state) << " - cursor error while trying to delete " << min
                 << " to " << max << " in " << _nss << ": " << WorkingSetCommon::toStatusString(obj)
                 << ", stats: " << Explain::getWinningPlanStats(exec.get());

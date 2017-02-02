@@ -167,11 +167,16 @@ public:
 
     void onDropCollection(OperationContext* txn, const NamespaceString& collectionName);
 
-    /** Returns a pointer to the metadata manager for this collection. */
-    MetadataManager* getMetadataManager() {
-        return &_metadataManager;
-    }
-
+    /**
+     * Calls the specified deleter function on documents in the range specified, if any, or in any
+     * other range scheduled for cleanup, and waits for majority write concern on the deletions.
+     * Returns boost::none if no more ranges are ready to clean up; otherwise, returns the range to
+     * clean on the next round.
+     */
+    boost::optional<ChunkRange> cleanNextRange(
+        OperationContext* txn,
+        boost::optional<ChunkRange> inProgress,
+        std::function<int (Collection*, ChunkRange, BSONObj)> deleter);
 
 private:
     /**
@@ -204,6 +209,8 @@ private:
     //
     // NOTE: The value is not owned by this class.
     MigrationSourceManager* _sourceMgr{nullptr};
+
+    friend class CollectionRangeDeleterTest;
 };
 
 }  // namespace mongo

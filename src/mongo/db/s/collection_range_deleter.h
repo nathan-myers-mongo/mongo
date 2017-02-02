@@ -56,17 +56,17 @@ public:
      * Returns true if there are more entries in rangesToClean, false if there is no more progress
      * to be made.
      */
-    bool cleanupNextRange(OperationContext* txn, int maxToDelete);
+    bool cleanNextRange(OperationContext* txn, int maxToDelete);
 
 private:
     /**
-     * Performs the deletion of up to maxToDelete entries within the range in progress.
-     * This function will invariant if called while _rangeInProgress is not set.
+     * Performs the deletion of up to maxToDelete entries within the specified range.
      *
      * Returns the number of documents deleted (0 if deletion is finished), or -1 for error.
      */
-    int _doDeletion(OperationContext* txn,
+    int _deleteSome(OperationContext* txn,
                     Collection* cln,
+                    ChunkRange range,
                     const BSONObj& keyPattern,
                     int maxToDelete);
 

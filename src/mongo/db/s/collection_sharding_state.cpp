@@ -59,8 +59,6 @@ namespace mongo {
 
 namespace {
 
-using std::string;
-
 /**
  * Used to perform shard identity initialization once it is certain that the document is committed.
  */
@@ -148,7 +146,7 @@ void CollectionShardingState::clearMigrationSourceManager(OperationContext* txn)
 }
 
 void CollectionShardingState::checkShardVersionOrThrow(OperationContext* txn) {
-    string errmsg;
+    std::string errmsg;
     ChunkVersion received;
     ChunkVersion wanted;
     if (!_checkShardVersionOk(txn, &errmsg, &received, &wanted)) {
@@ -287,7 +285,7 @@ void CollectionShardingState::onDropCollection(OperationContext* txn,
 }
 
 bool CollectionShardingState::_checkShardVersionOk(OperationContext* txn,
-                                                   string* errmsg,
+                                                   std::string* errmsg,
                                                    ChunkVersion* expectedShardVersion,
                                                    ChunkVersion* actualShardVersion) {
     Client* client = txn->getClient();
@@ -376,6 +374,47 @@ bool CollectionShardingState::_checkShardVersionOk(OperationContext* txn,
 
     // Those are all the reasons the versions can mismatch
     MONGO_UNREACHABLE;
+}
+
+boost::optional<ChunkRange> CollectionShardingState::clearNextRange(
+        OperationContext* txn,
+        boost::optional<ChunkRange> inProgress,
+        std::function<int(Collection*, ChunkRange, BSONObj)> deleter) {
+    {
+        AutoGetCollection autoColl(txn, _nss, MODE_IX);
+        Collection* collection = autoColl.getCollection();
+        if (!collection) {
+            return boost::none;
+        }
+        if (!inProgress && !_metadataManager.hasRangesToClean()) {
+            // Nothing left to do
+            return boost::none;
+        }
+        if (!inProgress || !metadataManager.isInRangesToClean(*inProgress)) {
+            // No valid chunk in progress, try to get a new one
+            if (!_metadataManager->hasRangesToClean()) {
+                return boost::none;
+            }
+            inProgress = _metadataManager.getNextRangeToClean();
+        }
+        invariant(inProgress);
+
+        int numDeleted = deleter(collection, *inProgress, _metadata.keyPattern);
+        if (numDeleted <= 0) {
+            _metadataManager.removeRangeToClean(*inProgress);
+            inProgress = _metadataManager.getNextRangeToClean();
+        }
+    }
+
+    // wait for replication
+    WriteConcernResult wcResult;
+    auto currentClientOpTime = repl::ReplClientInfo::forClient(txn->getClient()).getLastOp();
+    Status status = waitForWriteConcern(txn, currentClientOpTime, kMajorityWriteConcern, &wcResult);
+    if (!status.isOK()) {
+        warning() << "Error when waiting for write concern after removing chunks in " << _nss
+                  << " : " << status.reason();
+    }
+    return inProgress;
 }
 
 }  // namespace mongo
