@@ -84,10 +84,10 @@ void CollectionRangeDeleterTest::setUp() {
 }
 
 void CollectionRangeDeleterTest::tearDown() {
-    {
-        AutoGetCollection autoColl(operationContext(), kNamespaceString, MODE_IX);
-        ShardingState::get(operationContext())->resetMetadata(kNamespaceString.toString());
-    }
+    // {
+    //     AutoGetCollection autoColl(operationContext(), kNamespaceString, MODE_IX);
+    //     ShardingState::get(operationContext())->resetMetadata(kNamespaceString.toString());
+    // }
     _rangeDeleter.reset();
     _dbDirectClient.reset();
     _opCtx.reset();
@@ -110,13 +110,13 @@ TEST_F(CollectionRangeDeleterTest, NoDataInGivenRangeToClean) {
     const BSONObj insertedDoc = BSON(kPattern << 25);
 
     _dbDirectClient->insert(kNamespaceString.toString(), insertedDoc);
-    ASSERT_EQUALS(insertedDoc,
+    ASSERT_BSONOBJ_EQ(insertedDoc,
                   _dbDirectClient->findOne(kNamespaceString.toString(), QUERY(kPattern << 25)));
 
     _migrationManager->addRangeToClean(kChunkRange);
     ASSERT_FALSE(_rangeDeleter->cleanupNextRange(operationContext(), 1));
 
-    ASSERT_EQUALS(insertedDoc,
+    ASSERT_BSONOBJ_EQ(insertedDoc,
                   _dbDirectClient->findOne(kNamespaceString.toString(), QUERY(kPattern << 25)));
 }
 
@@ -125,7 +125,7 @@ TEST_F(CollectionRangeDeleterTest, OneDocumentInOneRangeToClean) {
     const BSONObj insertedDoc = BSON(kPattern << 5);
 
     _dbDirectClient->insert(kNamespaceString.toString(), BSON(kPattern << 5));
-    ASSERT_EQUALS(insertedDoc,
+    ASSERT_BSONOBJ_EQ(insertedDoc,
                   _dbDirectClient->findOne(kNamespaceString.toString(), QUERY(kPattern << 5)));
 
     _migrationManager->addRangeToClean(kChunkRange);
@@ -243,7 +243,7 @@ TEST_F(CollectionRangeDeleterTest, MultipleCallstoCleanupNextRangeWithChunkRecei
 
     ASSERT_FALSE(_rangeDeleter->cleanupNextRange(operationContext(), 2));
 
-    ASSERT_EQUALS(
+    ASSERT_BSONOBJ_EQ(
         insertedDoc5,
         _dbDirectClient->findOne(kNamespaceString.toString(), QUERY(kPattern << GT << 0)));
 }
