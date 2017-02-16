@@ -29,14 +29,16 @@ load('./jstests/libs/cleanup_orphaned_util.js');
         {moveChunk: ns, find: {_id: 20}, to: st.shard1.shardName, _waitForDelete: true}));
 
     jsTest.log('Inserting 20 docs into shard 0....');
-    for (var i = -20; i < 20; i += 2)
+    for (var i = -20; i < 20; i += 2) {
         coll.insert({_id: i});
+    }
     assert.eq(null, coll.getDB().getLastError());
     assert.eq(20, donorColl.count());
 
     jsTest.log('Inserting 10 docs into shard 1....');
-    for (i = 20; i < 40; i += 2)
+    for (i = 20; i < 40; i += 2) {
         coll.insert({_id: i});
+    }
     assert.eq(null, coll.getDB().getLastError());
     assert.eq(10, recipientColl.count());
 
@@ -133,19 +135,20 @@ load('./jstests/libs/cleanup_orphaned_util.js');
     unpauseMigrateAtStep(recipient, migrateStepNames.done);
     waitForMoveChunkStep(donor, moveChunkStepNames.committed);
 
-    // Donor is paused after the migration chunk commit, but before it finishes the cleanup that
-    // includes running the range deleter. Thus it technically has orphaned data -- commit is
-    // complete, but moved data is still present. cleanupOrphaned can remove the data the donor
-    // would otherwise clean up itself in its post-move delete phase.
+    // Donor is paused after the migration chunk commit and scheduling the range deleter, but before
+    // that is allowed to run. Thus it technically has orphaned data -- commit is complete, but
+    // moved data is still present. cleanupOrphaned cannot remove the data the donor has scheduled
+    // to clean up because the moveChunk command itself, which started while the orphan range was
+    // live, blocks its cleanup.  So, unstop it first.  The moveChunk range will be cleaned first,
+    // then cleanupOrphans will clean two now-empty ranges.
+
+    unpauseMoveChunkAtStep(donor, moveChunkStepNames.committed);
     cleanupOrphaned(donor, ns, 2);
     assert.eq(10, donorColl.count());
 
     // Let the donor migration finish.
-    unpauseMoveChunkAtStep(donor, moveChunkStepNames.committed);
     joinMoveChunk();
 
-    // Donor has finished post-move delete, which had nothing to remove with the range deleter
-    // because of the preemptive cleanupOrphaned call.
     assert.eq(10, donorColl.count());
     assert.eq(21, recipientColl.count());
     assert.eq(31, coll.count());

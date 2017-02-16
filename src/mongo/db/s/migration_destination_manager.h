@@ -70,6 +70,13 @@ public:
     void setState(State newState);
 
     /**
+     * These log the argument msg; then, under lock, move msg to _errmsg and set the state to FAIL.
+     * The setStateWailWarn version logs with "warning() << msg".
+     */
+    void setStateFail(std::string msg);
+    void setStateFailWarn(std::string msg);
+
+    /**
      * Checks whether the MigrationDestinationManager is currently handling a migration.
      */
     bool isActive() const;
@@ -97,7 +104,6 @@ public:
                  const BSONObj& min,
                  const BSONObj& max,
                  const BSONObj& shardKeyPattern,
-                 const OID& epoch,
                  const WriteConcernOptions& writeConcern);
 
     /**
@@ -122,7 +128,6 @@ private:
                         BSONObj max,
                         BSONObj shardKeyPattern,
                         ConnectionString fromShardConnString,
-                        OID epoch,
                         WriteConcernOptions writeConcern);
 
     void _migrateDriver(OperationContext* opCtx,
@@ -130,7 +135,6 @@ private:
                         const BSONObj& max,
                         const BSONObj& shardKeyPattern,
                         const ConnectionString& fromShardConnString,
-                        const OID& epoch,
                         const WriteConcernOptions& writeConcern);
 
     bool _applyMigrateOp(OperationContext* opCtx,
@@ -150,35 +154,17 @@ private:
 
     /**
      * Remembers a chunk range between 'min' and 'max' as a range which will have data migrated
-     * into it.  This data can then be protected against cleanup of orphaned data.
-     *
-     * Overlapping pending ranges will be removed, so it is only safe to use this when you know
-     * your metadata view is definitive, such as at the start of a migration.
-     *
-     * TODO: Because migrations may currently be active when a collection drops, an epoch is
-     * necessary to ensure the pending metadata change is still applicable.
+     * into it, to protect it against separate commands to clean up orphaned data. First, though,
+     * it schedules deletion of any documents in the range, so that process must be seen to be
+     * complete before migrating any new documents in.
      */
-    Status _notePending(OperationContext* opCtx,
-                        const NamespaceString& nss,
-                        const BSONObj& min,
-                        const BSONObj& max,
-                        const OID& epoch);
+    Status _notePending(OperationContext*, NamespaceString const&, ChunkRange const&);
 
     /**
      * Stops tracking a chunk range between 'min' and 'max' that previously was having data
-     * migrated into it.  This data is no longer protected against cleanup of orphaned data.
-     *
-     * To avoid removing pending ranges of other operations, ensure that this is only used when
-     * a migration is still active.
-     *
-     * TODO: Because migrations may currently be active when a collection drops, an epoch is
-     * necessary to ensure the pending metadata change is still applicable.
+     * migrated into it, and schedules deletion of any such documents already migrated in.
      */
-    Status _forgetPending(OperationContext* opCtx,
-                          const NamespaceString& nss,
-                          const BSONObj& min,
-                          const BSONObj& max,
-                          const OID& epoch);
+    void _forgetPending(OperationContext*, NamespaceString const&, ChunkRange const&);
 
     /**
      * Checks whether the MigrationDestinationManager is currently handling a migration by checking

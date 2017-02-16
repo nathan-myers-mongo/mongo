@@ -399,12 +399,12 @@ long long Helpers::removeRange(OperationContext* opCtx,
                 bool docIsOrphan;
 
                 // In write lock, so will be the most up-to-date version
-                auto metadataNow = CollectionShardingState::get(opCtx, nss.ns())->getMetadata();
+                auto css = CollectionShardingState::get(opCtx, nss.ns());
+                auto metadataNow = css->getMetadata();
                 if (metadataNow) {
                     ShardKeyPattern kp(metadataNow->getKeyPattern());
                     BSONObj key = kp.extractShardKeyFromDoc(obj);
-                    docIsOrphan =
-                        !metadataNow->keyBelongsToMe(key) && !metadataNow->keyIsPending(key);
+                    docIsOrphan = !metadataNow->keyBelongsToMe(key) && !css->keyIsPending(key);
                 } else {
                     docIsOrphan = false;
                 }

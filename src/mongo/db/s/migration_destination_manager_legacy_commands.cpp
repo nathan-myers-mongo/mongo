@@ -161,7 +161,6 @@ public:
             chunkRange.getMin(),
             chunkRange.getMax(),
             shardKeyPattern,
-            currentVersion.epoch(),
             writeConcern));
 
         result.appendBool("started", true);
