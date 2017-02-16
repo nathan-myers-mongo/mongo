@@ -81,6 +81,11 @@ public:
     std::unique_ptr<CollectionMetadata> clonePlusPending(const ChunkType& chunk) const;
 
     /**
+     * Returns a full copy of *this.
+     */
+    std::unique_ptr<CollectionMetadata> clone() const;
+
+    /**
      * Returns true if the document key 'key' is a valid instance of a shard key for this
      * metadata.  The 'key' must contain exactly the same fields as the shard key pattern.
      */

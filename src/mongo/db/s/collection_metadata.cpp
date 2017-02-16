@@ -109,13 +109,8 @@ CollectionMetadata::~CollectionMetadata() = default;
 std::unique_ptr<CollectionMetadata> CollectionMetadata::cloneMinusPending(
     const ChunkType& chunk) const {
     invariant(rangeMapContains(_pendingMap, chunk.getMin(), chunk.getMax()));
-
-    auto metadata(stdx::make_unique<CollectionMetadata>(
-        _keyPattern, getCollVersion(), getShardVersion(), getChunks()));
-    metadata->_pendingMap = _pendingMap;
-
+    auto metadata{clone()};
     metadata->_pendingMap.erase(chunk.getMin());
-
     return metadata;
 }
 
@@ -123,9 +118,7 @@ std::unique_ptr<CollectionMetadata> CollectionMetadata::clonePlusPending(
     const ChunkType& chunk) const {
     invariant(!rangeMapOverlaps(_chunksMap, chunk.getMin(), chunk.getMax()));
 
-    auto metadata(stdx::make_unique<CollectionMetadata>(
-        _keyPattern, getCollVersion(), getShardVersion(), getChunks()));
-    metadata->_pendingMap = _pendingMap;
+    auto metadata{clone()};
 
     // If there are any pending chunks on the interval to be added this is ok, since pending chunks
     // aren't officially tracked yet and something may have changed on servers we do not see yet.
@@ -151,6 +144,13 @@ std::unique_ptr<CollectionMetadata> CollectionMetadata::clonePlusPending(
     metadata->_pendingMap.emplace(chunk.getMin(),
                                   CachedChunkInfo(chunk.getMax(), ChunkVersion::IGNORED()));
 
+    return metadata;
+}
+
+std::unique_ptr<CollectionMetadata> CollectionMetadata::clone() const {
+    auto metadata(stdx::make_unique<CollectionMetadata>(
+        _keyPattern, getCollVersion(), getShardVersion(), getChunks()));
+    metadata->_pendingMap = _pendingMap;
     return metadata;
 }
 

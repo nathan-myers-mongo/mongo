@@ -34,6 +34,7 @@
 
 #include "mongo/db/client.h"
 #include "mongo/db/concurrency/lock_state.h"
+#include "mongo/db/db_raii.h"
 #include "mongo/db/operation_context.h"
 #include "mongo/db/repl/replication_coordinator_global.h"
 #include "mongo/db/s/collection_metadata.h"
@@ -84,7 +85,8 @@ private:
 }  // unnamed namespace
 
 CollectionShardingState::CollectionShardingState(ServiceContext* sc, NamespaceString nss)
-    : _nss(std::move(nss)), _metadataManager{sc, _nss} {}
+    : _nss(std::move(nss)),
+      _metadataManager{sc, _nss, ShardingState::get(sc)->getRangeDeleterTaskExecutor()} {}
 
 CollectionShardingState::~CollectionShardingState() {
     invariant(!_sourceMgr);
@@ -170,6 +172,51 @@ bool CollectionShardingState::collectionIsSharded() {
     // this scenario we will assume this collection is sharded. We will know sharding state
     // definitively once SERVER-24960 has been fixed.
     return true;
+}
+
+void CollectionShardingState::cleanUpRange(ChunkRange const& orphans) {
+    _metadataManager.addRangeToClean(orphans);
+}
+
+// Call with collection unlocked.  Note that the CollectionShardingState object involved might not
+// exist anymore at the time of the call, or indeed anytime outside the AutoGetCollection block, so
+// anything that might alias something in it must be copied first.
+
+Status CollectionShardingState::waitForClean(OperationContext* opCtx,
+                                             NamespaceString nss,
+                                             ChunkRange orphanRange,
+                                             OID epoch) {
+
+    do {
+        auto stillScheduled = CollectionShardingState::CleanupNotification(nullptr);
+        {
+            AutoGetCollection autoColl(opCtx, nss, MODE_IX);
+            // First, see if collection was dropped.
+            auto css = CollectionShardingState::get(opCtx, nss);
+            auto metadata = css->getMetadata();
+            if (!metadata || metadata->getCollVersion().epoch() != epoch) {
+                throw DBException("Collection being migrated was dropped",
+                                  ErrorCodes::StaleShardVersion);
+            }
+
+            stillScheduled = css->_metadataManager.trackCleanup(orphanRange);
+            if (stillScheduled == nullptr) {
+                return Status::OK();  // done!
+            }
+        }  // drop collection lock
+
+        log() << "Waiting to delete " << nss.ns() << " range " << orphanRange.toString();
+        Status result = stillScheduled->get(opCtx);
+        if (!result.isOK()) {
+            return {result.code(),
+                    str::stream() << "Failed to delete orphaned collection " << nss.ns()
+                                  << " range "
+                                  << orphanRange.toString()
+                                  << ": "
+                                  << result.reason()};
+        }
+    } while (true);
+    MONGO_UNREACHABLE;
 }
 
 bool CollectionShardingState::isDocumentInMigratingChunk(OperationContext* opCtx,
@@ -317,8 +364,7 @@ bool CollectionShardingState::_checkShardVersionOk(OperationContext* opCtx,
         if (!info) {
             // There is no shard version information on either 'opCtx' or 'client'. This means that
             // the operation represented by 'opCtx' is unversioned, and the shard version is always
-            // OK
-            // for unversioned operations.
+            // OK for unversioned operations.
             return true;
         }
 

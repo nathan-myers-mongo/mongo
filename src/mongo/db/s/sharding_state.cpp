@@ -140,8 +140,7 @@ MONGO_INITIALIZER_WITH_PREREQUISITES(MongoDLocalShardingInfo, ("SetGlobalEnviron
 ShardingState::ShardingState()
     : _initializationState(static_cast<uint32_t>(InitializationState::kNew)),
       _initializationStatus(Status(ErrorCodes::InternalError, "Uninitialized value")),
-      _globalInit(&initializeGlobalShardingStateForMongod),
-      _scheduleWorkFn([](NamespaceString nss) {}) {}
+      _globalInit(&initializeGlobalShardingStateForMongod) {}
 
 ShardingState::~ShardingState() = default;
 
@@ -235,14 +234,6 @@ void ShardingState::markCollectionsNotShardedAtStepdown() {
 
 void ShardingState::setGlobalInitMethodForTest(GlobalInitFunc func) {
     _globalInit = func;
-}
-
-void ShardingState::setScheduleCleanupFunctionForTest(RangeDeleterCleanupNotificationFunc fn) {
-    _scheduleWorkFn = fn;
-}
-
-void ShardingState::scheduleCleanup(const NamespaceString& nss) {
-    _scheduleWorkFn(nss);
 }
 
 Status ShardingState::onStaleShardVersion(OperationContext* opCtx,
@@ -362,7 +353,6 @@ Status ShardingState::initializeFromShardIdentity(OperationContext* opCtx,
         _shardName = shardIdentity.getShardName();
         _clusterId = shardIdentity.getClusterId();
 
-        _initializeRangeDeleterTaskExecutor();
 
         return status;
     } catch (const DBException& ex) {
@@ -620,16 +610,24 @@ Status ShardingState::updateShardIdentityConfigString(OperationContext* opCtx,
     return Status::OK();
 }
 
-void ShardingState::_initializeRangeDeleterTaskExecutor() {
-    invariant(!_rangeDeleterTaskExecutor);
-    auto net =
-        executor::makeNetworkInterface("NetworkInterfaceCollectionRangeDeleter-TaskExecutor");
-    auto netPtr = net.get();
-    _rangeDeleterTaskExecutor = stdx::make_unique<executor::ThreadPoolTaskExecutor>(
-        stdx::make_unique<executor::NetworkInterfaceThreadPool>(netPtr), std::move(net));
+executor::TaskExecutor* ShardingState::getRangeDeleterTaskExecutor() {
+    stdx::lock_guard<stdx::mutex> lk(_rangeDeleterExecutor.lock);
+    if (!_rangeDeleterExecutor.tor) {
+        static const char kExecName[] = "NetworkInterfaceCollectionRangeDeleter-TaskExecutor";
+        auto net = executor::makeNetworkInterface(kExecName);
+        auto pool = stdx::make_unique<executor::NetworkInterfaceThreadPool>(net.get());
+        _rangeDeleterExecutor.tor =
+            stdx::make_unique<executor::ThreadPoolTaskExecutor>(std::move(pool), std::move(net));
+        _rangeDeleterExecutor.tor->startup();
+    }
+    return _rangeDeleterExecutor.tor.get();
 }
 
-executor::ThreadPoolTaskExecutor* ShardingState::getRangeDeleterTaskExecutor() {
-    return _rangeDeleterTaskExecutor.get();
+ShardingState::RangeDeleterExecutor::~RangeDeleterExecutor() {
+    if (tor) {
+        tor->shutdown();
+        tor->join();
+    }
 }
+
 }  // namespace mongo

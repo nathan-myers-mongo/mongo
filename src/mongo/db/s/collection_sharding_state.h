@@ -34,7 +34,9 @@
 #include "mongo/base/disallow_copying.h"
 #include "mongo/base/string_data.h"
 #include "mongo/db/namespace_string.h"
+#include "mongo/db/s/collection_range_deleter.h"
 #include "mongo/db/s/metadata_manager.h"
+#include "mongo/util/concurrency/notification.h"
 
 namespace mongo {
 
@@ -105,8 +107,9 @@ public:
     void markNotShardedAtStepdown();
 
     /**
-     * Modifies the collection's sharding state to indicate that it is beginning to receive the
-     * given ChunkRange.
+     * Schedules any documents in the range for deletion. Assumes no active queries can see local
+     * copies of documents in the range. Call waitForClean, afterward, before requesting transfer
+     * of any such documents.
      */
     void beginReceive(const ChunkRange& range);
 
@@ -154,6 +157,29 @@ public:
      */
     bool collectionIsSharded();
 
+    /**
+     * Schedule documents in the range for deletion. All active queries that could be using any of
+     * the documents in the range are allowed to run to completion before any deletion begins.
+     * Call waitForClean first if any documents in the range are to be moved in.
+     */
+    void cleanUpRange(ChunkRange const& range);
+
+    /**
+     * Tracks deletion of any documents within the range, returning when deletion is complete.
+     * Throws if the collection is dropped while it sleeps. Call this with the collection unlocked.
+     */
+    static Status waitForClean(OperationContext*, NamespaceString, ChunkRange, OID epoch);
+
+    using CleanupNotification = MetadataManager::CleanupNotification;
+    /**
+     * Reports whether any part of the argument range is still scheduled for deletion. If not,
+     * returns nullptr. Otherwise, returns a notification n such that n->get(opCtx) will wake when
+     * deletion of a range (possibly the one of interest) is completed.  This should be called
+     * again after each wakeup until it returns nullptr, because there might be more than one
+     * scheduled range that overlaps the argument.
+     */
+    CleanupNotification trackCleanup(ChunkRange const& range);
+
     // Replication subsystem hooks. If this collection is serving as a source for migration, these
     // methods inform it of any changes to its contents.
 
@@ -170,7 +196,6 @@ public:
     MetadataManager* getMetadataManagerForTest() {
         return &_metadataManager;
     }
-
 
 private:
     /**
@@ -191,7 +216,7 @@ private:
                               ChunkVersion* expectedShardVersion,
                               ChunkVersion* actualShardVersion);
 
-    // Namespace to which this state belongs.
+    // Namespace this state belongs to.
     const NamespaceString _nss;
 
     // Contains all the metadata associated with this collection.

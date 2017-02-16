@@ -51,6 +51,7 @@
 #include "mongo/db/repl/repl_client_info.h"
 #include "mongo/db/repl/replication_coordinator_global.h"
 #include "mongo/db/s/collection_metadata.h"
+#include "mongo/db/s/collection_range_deleter.h"
 #include "mongo/db/s/collection_sharding_state.h"
 #include "mongo/db/s/migration_util.h"
 #include "mongo/db/s/move_timing_helper.h"
@@ -62,6 +63,7 @@
 #include "mongo/s/catalog/type_chunk.h"
 #include "mongo/s/shard_key_pattern.h"
 #include "mongo/stdx/chrono.h"
+#include "mongo/util/concurrency/notification.h"
 #include "mongo/util/fail_point_service.h"
 #include "mongo/util/log.h"
 #include "mongo/util/mongoutils/str.h"
@@ -1000,32 +1002,31 @@ Status MigrationDestinationManager::_notePending(OperationContext* opCtx,
                                                  const BSONObj& min,
                                                  const BSONObj& max,
                                                  const OID& epoch) {
-    AutoGetCollection autoColl(opCtx, nss, MODE_IX, MODE_X);
+    ChunkRange footprint(min, max);
+    {
+        AutoGetCollection autoColl(opCtx, nss, MODE_IX, MODE_X);
+        auto css = CollectionShardingState::get(opCtx, nss);
+        auto metadata = css->getMetadata();
 
-    auto css = CollectionShardingState::get(opCtx, nss);
-    auto metadata = css->getMetadata();
-
-    // This can currently happen because drops aren't synchronized with in-migrations.  The idea
-    // for checking this here is that in the future we shouldn't have this problem.
-    if (!metadata || metadata->getCollVersion().epoch() != epoch) {
-        return {ErrorCodes::StaleShardVersion,
-                str::stream() << "could not note chunk [" << min << "," << max << ")"
-                              << " as pending because the epoch for "
-                              << nss.ns()
-                              << " has changed from "
-                              << epoch
-                              << " to "
-                              << (metadata ? metadata->getCollVersion().epoch()
-                                           : ChunkVersion::UNSHARDED().epoch())};
+        // This can currently happen because drops aren't synchronized with in-migrations.  The
+        // idea for checking this here is that in the future we shouldn't have this problem.
+        if (!metadata || metadata->getCollVersion().epoch() != epoch) {
+            return {ErrorCodes::StaleShardVersion,
+                    str::stream() << "could not note chunk [" << min << "," << max << ")"
+                                  << " as pending because the epoch for "
+                                  << nss.ns()
+                                  << " has changed from "
+                                  << epoch
+                                  << " to "
+                                  << (metadata ? metadata->getCollVersion().epoch()
+                                               : ChunkVersion::UNSHARDED().epoch())};
+        }
+        // start clearing any leftovers that would be in the new chunk
+        css->beginReceive(footprint);
+        invariant(!_chunkMarkedPending);
     }
 
-    css->beginReceive(ChunkRange(min, max));
-
-    stdx::lock_guard<stdx::mutex> sl(_mutex);
-    invariant(!_chunkMarkedPending);
-    _chunkMarkedPending = true;
-
-    return Status::OK();
+    return CollectionShardingState::waitForClean(opCtx, nss, footprint, epoch);
 }
 
 Status MigrationDestinationManager::_forgetPending(OperationContext* opCtx,
