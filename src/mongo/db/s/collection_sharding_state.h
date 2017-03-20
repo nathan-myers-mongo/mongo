@@ -160,7 +160,7 @@ public:
     /**
      * Schedule documents in the range for deletion. All active queries that could be using any of
      * the documents in the range are allowed to run to completion before any deletion begins.
-     * Call waitForClean first if any documents in the range are to be moved in.
+     * Before moving in any new documents in the range, call waitForClean first
      */
     void cleanUpRange(ChunkRange const& range);
 
@@ -175,8 +175,8 @@ public:
      * Reports whether any part of the argument range is still scheduled for deletion. If not,
      * returns nullptr. Otherwise, returns a notification n such that n->get(opCtx) will wake when
      * deletion of a range (possibly the one of interest) is completed.  This should be called
-     * again after each wakeup until it returns nullptr, because there might be more than one
-     * scheduled range that overlaps the argument.
+     * again after each wakeup until it returns nullptr, because there can be more than one range
+     * scheduled for deletion that overlaps its argument.
      */
     CleanupNotification trackCleanup(ChunkRange const& range);
 
