@@ -77,8 +77,6 @@ public:
         return RemoteCommandTargeterMock::get(shardRegistry()->getConfigShard()->getTargeter());
     }
 
-    std::unique_ptr<DBDirectClient> _dbDirectClient;
-
 protected:
     void setUp() override {
         ShardingMongodTestFixture::setUp();
@@ -86,20 +84,6 @@ protected:
         initializeGlobalShardingStateForMongodForTest(ConnectionString(dummyHost));
 
         configTargeter()->setFindHostReturnValue(dummyHost);
-
-
-        _dbDirectClient = std::make_unique<DBDirectClient>(operationContext());
-
-        {
-            AutoGetCollection autoColl(operationContext(), kNss, MODE_IX);
-            auto collectionShardingState = CollectionShardingState::get(operationContext(), kNss);
-            ASSERT(collectionShardingState != nullptr);
-        }
-
-    }
-
-    void tearDown() override {
-        ShardingMongodTestFixture::tearDown();
     }
 
     std::unique_ptr<DistLockCatalog> makeDistLockCatalog(ShardRegistry* shardRegistry) override {
@@ -153,6 +137,20 @@ protected:
         return stdx::make_unique<CollectionMetadata>(
             metadata.getKeyPattern(), chunkVersion, chunkVersion, std::move(chunksMap));
     }
+
+    CollectionMetadata* addChunk(MetadataManager* manager) {
+        ScopedCollectionMetadata scopedMetadata1 = manager->getActiveMetadata();
+    
+        ChunkVersion newVersion = scopedMetadata1->getCollVersion();
+        newVersion.incMajor();
+        std::unique_ptr<CollectionMetadata> cm2 = cloneMetadataPlusChunk(
+            *scopedMetadata1.getMetadata(), BSON("key" << 0), BSON("key" << 20), newVersion);
+        auto cm2Ptr = cm2.get();
+    
+        manager->refreshActiveMetadata(std::move(cm2));
+        return cm2Ptr;
+    }
+    
 };
 
 TEST_F(MetadataManagerTest, SetAndGetActiveMetadata) {
@@ -170,61 +168,62 @@ TEST_F(MetadataManagerTest, SetAndGetActiveMetadata) {
 TEST_F(MetadataManagerTest, ResetActiveMetadata) {
     MetadataManager manager(getServiceContext(), kNss, executor());
     manager.refreshActiveMetadata(makeEmptyMetadata());
-
-    ScopedCollectionMetadata scopedMetadata1 = manager.getActiveMetadata();
-
-    ChunkVersion newVersion = scopedMetadata1->getCollVersion();
-    newVersion.incMajor();
-    std::unique_ptr<CollectionMetadata> cm2 = cloneMetadataPlusChunk(
-        *scopedMetadata1.getMetadata(), BSON("key" << 0), BSON("key" << 10), newVersion);
-    auto cm2Ptr = cm2.get();
-
-    manager.refreshActiveMetadata(std::move(cm2));
+    auto cm2Ptr = addChunk(&manager);
     ScopedCollectionMetadata scopedMetadata2 = manager.getActiveMetadata();
-
     ASSERT_EQ(cm2Ptr, scopedMetadata2.getMetadata());
 };
 
 TEST_F(MetadataManagerTest, AddRangesToClean) {
     MetadataManager manager(getServiceContext(), kNss, executor());
 
-    {
-        AutoGetCollection autoColl(operationContext(), kNss, MODE_IX);
-        auto collection = autoColl.getCollection();
-        ASSERT(collection != nullptr);
-        _dbDirectClient->insert(kNss.toString(), BSON(kPattern << 1));
-        _dbDirectClient->insert(kNss.toString(), BSON(kPattern << 2));
-        _dbDirectClient->insert(kNss.toString(), BSON(kPattern << 3));
-    }
-
+    ChunkRange range2(BSON("key" << 10), BSON("key" << 20));
     manager.addRangeToClean(ChunkRange(BSON("key" << 0), BSON("key" << 10)));
-    ASSERT_EQ(manager.numberOfRangesToClean(), 1UL);
     manager.addRangeToClean(ChunkRange(BSON("key" << 10), BSON("key" << 20)));
     ASSERT_EQ(manager.numberOfRangesToClean(), 2UL);
+    // The ranges-to-clean is not drained because the collection does not exist.
 }
 
-TEST_F(MetadataManagerTest, AddAndRemoveRangeNotificationsBlockAndYield) {
+TEST_F(MetadataManagerTest, AddRangeNotificationsBlockAndYield) {
     MetadataManager manager(getServiceContext(), kNss, executor());
-    manager.refreshActiveMetadata(makeEmptyMetadata());
 
     ChunkRange cr1(BSON("key" << 0), BSON("key" << 10));
     manager.addRangeToClean(cr1);
+    ASSERT_EQ(manager.numberOfRangesToClean(), 1UL);
     auto notification = manager.trackCleanup(cr1);
-    ASSERT(notification.get() == nullptr ||
-        Status::OK() == notification->get(operationContext()));
-    ASSERT_EQ(manager.numberOfRangesToClean(), 0UL);
+    ASSERT(notification != nullptr && !bool(*notification));
+    notification->set(Status::OK());
+    ASSERT(bool(*notification));
+    ASSERT_OK(notification->get(operationContext()));
 }
 
 TEST_F(MetadataManagerTest, NotificationBlocksUntilDeletion) {
+    ChunkRange cr1(BSON("key" << 0), BSON("key" << 10));
     MetadataManager manager(getServiceContext(), kNss, executor());
     manager.refreshActiveMetadata(makeEmptyMetadata());
-    ChunkRange cr1(BSON("key" << 0), BSON("key" << 10));
-    manager.addRangeToClean(cr1);
-    auto notification = manager.trackCleanup(cr1);
-    auto opCtx = cc().makeOperationContext();
-    // Once the new range deleter is set up, this might fail if the range deleter
-    // deleted cr1 before we got here...
-    ASSERT(false == notification->waitFor(operationContext(), Milliseconds(0)));
+    auto notif = manager.trackCleanup(cr1);
+    ASSERT(notif.get() == nullptr);
+    {
+        ASSERT_EQ(manager.numberOfMetadataSnapshots(), 0UL);
+        ASSERT_EQ(manager.numberOfRangesToClean(), 0UL);
+
+        auto scm = manager.getActiveMetadata();  // and increment scm's refcount
+        ASSERT(bool(scm));
+        addChunk(&manager);  // push new metadata
+
+        ASSERT_EQ(manager.numberOfMetadataSnapshots(), 1UL);
+        ASSERT_EQ(manager.numberOfRangesToClean(), 0UL);  // not yet...
+
+        manager.addRangeToClean(cr1);
+        ASSERT_EQ(manager.numberOfMetadataSnapshots(), 2UL);
+        ASSERT_EQ(manager.numberOfRangesToClean(), 0UL);  // not yet...
+
+        notif = manager.trackCleanup(cr1);  // will wake when scm goes away
+    } // scm destroyed, refcount of tracker goes to zero
+    ASSERT_EQ(manager.numberOfMetadataSnapshots(), 0UL);
+    ASSERT_EQ(manager.numberOfRangesToClean(), 1UL); 
+    ASSERT(bool(notif)); // woke
+    notif = manager.trackCleanup(cr1);  // now tracking the range in _rangesToClean
+    ASSERT(notif.get() != nullptr);
 }
 
 TEST_F(MetadataManagerTest, RefreshAfterSuccessfulMigrationSinglePending) {
@@ -241,6 +240,7 @@ TEST_F(MetadataManagerTest, RefreshAfterSuccessfulMigrationSinglePending) {
         *manager.getActiveMetadata().getMetadata(), cr1.getMin(), cr1.getMax(), version));
     ASSERT_EQ(manager.getActiveMetadata()->getChunks().size(), 1UL);
 }
+
 
 TEST_F(MetadataManagerTest, RefreshAfterSuccessfulMigrationMultiplePending) {
     MetadataManager manager(getServiceContext(), kNss, executor());

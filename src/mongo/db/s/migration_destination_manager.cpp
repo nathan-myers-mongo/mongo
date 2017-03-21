@@ -1024,6 +1024,9 @@ Status MigrationDestinationManager::_notePending(OperationContext* opCtx,
         // start clearing any leftovers that would be in the new chunk
         css->beginReceive(footprint);
         invariant(!_chunkMarkedPending);
+
+        // Note: Outside this block, there is no expectation that the collection, or *css itself,
+        // still exist.
     }
 
     return CollectionShardingState::waitForClean(opCtx, nss, footprint, epoch);

@@ -193,10 +193,6 @@ public:
 
     void onDropCollection(OperationContext* opCtx, const NamespaceString& collectionName);
 
-    MetadataManager* getMetadataManagerForTest() {
-        return &_metadataManager;
-    }
-
 private:
     /**
      * Checks whether the shard version of the operation matches that of the collection.
@@ -228,8 +224,6 @@ private:
     //
     // NOTE: The value is not owned by this class.
     MigrationSourceManager* _sourceMgr{nullptr};
-
-    friend class CollectionRangeDeleter;
 };
 
 }  // namespace mongo

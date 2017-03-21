@@ -240,7 +240,9 @@ bool CollectionRangeDeleter::isEmpty() const {
 void CollectionRangeDeleter::clear() {
     std::for_each(_orphans.begin(), _orphans.end(), [](auto& range) {
         // Since deletion was not actually tried, we have no failures to report.
-        range.notification->set(Status::OK());  // wake up anything waiting on it
+        if (!*(range.notification)) {
+            range.notification->set(Status::OK());  // wake up anything waiting on it
+        }
     });
     _orphans.clear();
 }

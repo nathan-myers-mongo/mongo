@@ -63,6 +63,12 @@ public:
     ScopedCollectionMetadata getActiveMetadata();
 
     /**
+     * Returns the number of CollectionMetadata objects being maintained on behalf of running
+     * queries.
+     */
+    size_t numberOfMetadataSnapshots() const;
+
+    /**
      * Uses the contents of the specified metadata as a way to purge any pending chunks.
      */
     void refreshActiveMetadata(std::unique_ptr<CollectionMetadata> newMetadata);
@@ -112,21 +118,21 @@ public:
      */
     void decrementTrackerUsage(uint32_t* count);
 
-private:
-    friend class ScopedCollectionMetadata;
 
     struct CollectionMetadataTracker {
-    public:
         /**
-         * Creates a new CollectionMetadataTracker, with the usageCounter initialized to zero.
+         * Creates a new CollectionMetadataTracker with the usageCounter initialized to zero.
          */
         CollectionMetadataTracker(std::unique_ptr<CollectionMetadata> m);
-
+    private:
+        friend class ScopedCollectionMetadata;
+        friend class MetadataManager;
         std::unique_ptr<CollectionMetadata> metadata;
         uint32_t usageCounter{0};
         boost::optional<ChunkRange> orphans{boost::none};
     };
 
+private:
     /**
      * Pushes current set of chunks, if any, to _metadataInUse, replaces it with newMetadata.
      */

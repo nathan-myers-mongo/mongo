@@ -58,7 +58,9 @@ MetadataManager::MetadataManager( ServiceContext* sc, NamespaceString nss, TaskE
 MetadataManager::~MetadataManager() {
     stdx::lock_guard<stdx::mutex> scopedLock(_managerLock);
     // wake everybody up to see us die
-    _notification->set(Status::OK());
+    if (!*_notification) {
+        _notification->set(Status::OK());
+    }
     _rangesToClean.clear();
 }
 
@@ -68,6 +70,10 @@ ScopedCollectionMetadata MetadataManager::getActiveMetadata() {
         return ScopedCollectionMetadata();
     }
     return ScopedCollectionMetadata(this, _activeMetadataTracker.get());
+}
+
+size_t MetadataManager::numberOfMetadataSnapshots() const {
+    return _metadataInUse.size();
 }
 
 void MetadataManager::refreshActiveMetadata(std::unique_ptr<CollectionMetadata> remoteMetadata) {
@@ -313,7 +319,7 @@ void MetadataManager::addRangeToClean(ChunkRange const& range) {
         // No running queries depend on it, so queue it up for deletion immediately.
         _pushRangeToClean(range);
     } else {
-        // A runnning query might depend on the range. Queue up a copy of current metadata, tagged
+        // A running query might depend on the range. Queue up a copy of current metadata, tagged
         // with the range to delete when the currently running queries finish. Note the refcount
         // might be zero, making it zombie metadata that will be disposed of and its range queued
         // for deletion, when another, non-zombie, metadata's refcount goes to zero.
