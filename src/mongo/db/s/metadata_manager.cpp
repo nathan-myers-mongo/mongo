@@ -47,7 +47,7 @@ namespace mongo {
 using TaskExecutor = executor::TaskExecutor;
 using CallbackArgs = TaskExecutor::CallbackArgs;
 
-MetadataManager::MetadataManager( ServiceContext* sc, NamespaceString nss, TaskExecutor* executor)
+MetadataManager::MetadataManager(ServiceContext* sc, NamespaceString nss, TaskExecutor* executor)
     : _nss(std::move(nss)),
       _serviceContext(sc),
       _activeMetadataTracker(stdx::make_unique<CollectionMetadataTracker>(nullptr)),

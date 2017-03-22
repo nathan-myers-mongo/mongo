@@ -96,6 +96,7 @@ public:
                                  NamespaceString const& nss,
                                  stdx::mutex* lock,
                                  int maxToDelete);
+
 private:
     /**
      * Removes the latest-scheduled range from the ranges to be cleaned up.

@@ -42,16 +42,16 @@
 #include "mongo/db/s/collection_sharding_state.h"
 #include "mongo/db/s/sharding_state.h"
 #include "mongo/db/s/type_shard_identity.h"
-#include "mongo/db/service_context.h"
 #include "mongo/db/server_options.h"
+#include "mongo/db/service_context.h"
 #include "mongo/db/service_context_d_test_fixture.h"
 #include "mongo/executor/task_executor.h"
-#include "mongo/s/sharding_mongod_test_fixture.h"
-#include "mongo/s/catalog/type_chunk.h"
 #include "mongo/s/catalog/dist_lock_catalog_impl.h"
 #include "mongo/s/catalog/dist_lock_manager_mock.h"
 #include "mongo/s/catalog/sharding_catalog_client_mock.h"
+#include "mongo/s/catalog/type_chunk.h"
 #include "mongo/s/client/shard_registry.h"
+#include "mongo/s/sharding_mongod_test_fixture.h"
 #include "mongo/stdx/condition_variable.h"
 #include "mongo/stdx/memory.h"
 #include "mongo/unittest/unittest.h"
@@ -220,10 +220,10 @@ TEST_F(MetadataManagerTest, NotificationBlocksUntilDeletion) {
         ASSERT_EQ(manager.numberOfRangesToClean(), 0UL);  // not yet...
 
         notif = manager.trackCleanup(cr1);  // will wake when scm goes away
-    } // scm destroyed, refcount of tracker goes to zero
+    }                                       // scm destroyed, refcount of tracker goes to zero
     ASSERT_EQ(manager.numberOfMetadataSnapshots(), 0UL);
     ASSERT_EQ(manager.numberOfRangesToClean(), 1UL);
-    ASSERT(bool(notif)); // woke
+    ASSERT(bool(notif));                // woke
     notif = manager.trackCleanup(cr1);  // now tracking the range in _rangesToClean
     ASSERT(notif.get() != nullptr);
 }

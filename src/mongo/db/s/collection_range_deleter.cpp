@@ -184,8 +184,8 @@ StatusWith<int> CollectionRangeDeleter::_doDeletion(OperationContext* opCtx,
             warning(LogComponent::kSharding)
                 << PlanExecutor::statestr(state) << " - cursor error while trying to delete " << min
                 << " to " << max << " in " << collection->ns() << ": "
-                << WorkingSetCommon::toStatusString(obj) << ", stats: "
-                << Explain::getWinningPlanStats(exec.get());
+                << WorkingSetCommon::toStatusString(obj)
+                << ", stats: " << Explain::getWinningPlanStats(exec.get());
             break;
         }
 

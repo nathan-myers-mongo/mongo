@@ -30,11 +30,11 @@
 
 #include "mongo/base/disallow_copying.h"
 #include "mongo/bson/simple_bsonobj_comparator.h"
-#include "mongo/executor/task_executor.h"
 #include "mongo/db/namespace_string.h"
 #include "mongo/db/s/collection_metadata.h"
 #include "mongo/db/s/collection_range_deleter.h"
 #include "mongo/db/service_context.h"
+#include "mongo/executor/task_executor.h"
 #include "mongo/s/catalog/type_chunk.h"
 #include "mongo/util/concurrency/notification.h"
 
@@ -106,7 +106,8 @@ public:
     using CleanupNotification = CollectionRangeDeleter::DeleteNotification;
     /**
      * Reports whether the argument range is still scheduled for deletion. If not, returns nullptr.
-     * Otherwise, returns a notification n such that n->get(opCtx) will wake when deletion of a range
+     * Otherwise, returns a notification n such that n->get(opCtx) will wake when deletion of a
+     * range
      * (possibly the one of interest) is completed.
      */
     CleanupNotification trackCleanup(ChunkRange const& orphans);
@@ -124,6 +125,7 @@ public:
          * Creates a new CollectionMetadataTracker with the usageCounter initialized to zero.
          */
         CollectionMetadataTracker(std::unique_ptr<CollectionMetadata> m);
+
     private:
         friend class ScopedCollectionMetadata;
         friend class MetadataManager;
