@@ -109,7 +109,7 @@ CollectionMetadata::~CollectionMetadata() = default;
 std::unique_ptr<CollectionMetadata> CollectionMetadata::cloneMinusPending(
     const ChunkType& chunk) const {
     invariant(rangeMapContains(_pendingMap, chunk.getMin(), chunk.getMax()));
-    auto metadata{clone()};
+    std::unique_ptr<CollectionMetadata> metadata{clone()};
     metadata->_pendingMap.erase(chunk.getMin());
     return metadata;
 }
