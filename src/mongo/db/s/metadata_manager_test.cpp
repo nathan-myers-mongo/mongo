@@ -140,17 +140,16 @@ protected:
 
     CollectionMetadata* addChunk(MetadataManager* manager) {
         ScopedCollectionMetadata scopedMetadata1 = manager->getActiveMetadata();
-    
+
         ChunkVersion newVersion = scopedMetadata1->getCollVersion();
         newVersion.incMajor();
         std::unique_ptr<CollectionMetadata> cm2 = cloneMetadataPlusChunk(
             *scopedMetadata1.getMetadata(), BSON("key" << 0), BSON("key" << 20), newVersion);
         auto cm2Ptr = cm2.get();
-    
+
         manager->refreshActiveMetadata(std::move(cm2));
         return cm2Ptr;
     }
-    
 };
 
 TEST_F(MetadataManagerTest, SetAndGetActiveMetadata) {
@@ -173,6 +172,10 @@ TEST_F(MetadataManagerTest, ResetActiveMetadata) {
     ASSERT_EQ(cm2Ptr, scopedMetadata2.getMetadata());
 };
 
+// In the following tests, the ranges-to-clean is not drained by the background deleter thread
+// because the collection involved has no CollectionShardingState, so the task just returns without
+// doing anything.
+
 TEST_F(MetadataManagerTest, AddRangesToClean) {
     MetadataManager manager(getServiceContext(), kNss, executor());
 
@@ -180,7 +183,6 @@ TEST_F(MetadataManagerTest, AddRangesToClean) {
     manager.addRangeToClean(ChunkRange(BSON("key" << 0), BSON("key" << 10)));
     manager.addRangeToClean(ChunkRange(BSON("key" << 10), BSON("key" << 20)));
     ASSERT_EQ(manager.numberOfRangesToClean(), 2UL);
-    // The ranges-to-clean is not drained because the collection does not exist.
 }
 
 TEST_F(MetadataManagerTest, AddRangeNotificationsBlockAndYield) {
@@ -220,7 +222,7 @@ TEST_F(MetadataManagerTest, NotificationBlocksUntilDeletion) {
         notif = manager.trackCleanup(cr1);  // will wake when scm goes away
     } // scm destroyed, refcount of tracker goes to zero
     ASSERT_EQ(manager.numberOfMetadataSnapshots(), 0UL);
-    ASSERT_EQ(manager.numberOfRangesToClean(), 1UL); 
+    ASSERT_EQ(manager.numberOfRangesToClean(), 1UL);
     ASSERT(bool(notif)); // woke
     notif = manager.trackCleanup(cr1);  // now tracking the range in _rangesToClean
     ASSERT(notif.get() != nullptr);
@@ -230,7 +232,6 @@ TEST_F(MetadataManagerTest, RefreshAfterSuccessfulMigrationSinglePending) {
     MetadataManager manager(getServiceContext(), kNss, executor());
     manager.refreshActiveMetadata(makeEmptyMetadata());
     const ChunkRange cr1(BSON("key" << 0), BSON("key" << 10));
-    manager.beginReceive(cr1);
     ASSERT_EQ(manager.getActiveMetadata()->getChunks().size(), 0UL);
 
     ChunkVersion version = manager.getActiveMetadata()->getCollVersion();
@@ -247,11 +248,7 @@ TEST_F(MetadataManagerTest, RefreshAfterSuccessfulMigrationMultiplePending) {
     manager.refreshActiveMetadata(makeEmptyMetadata());
 
     const ChunkRange cr1(BSON("key" << 0), BSON("key" << 10));
-    manager.beginReceive(cr1);
-
     const ChunkRange cr2(BSON("key" << 30), BSON("key" << 40));
-    manager.beginReceive(cr2);
-
     ASSERT_EQ(manager.getActiveMetadata()->getChunks().size(), 0UL);
 
     {
@@ -260,7 +257,7 @@ TEST_F(MetadataManagerTest, RefreshAfterSuccessfulMigrationMultiplePending) {
 
         manager.refreshActiveMetadata(cloneMetadataPlusChunk(
             *manager.getActiveMetadata().getMetadata(), cr1.getMin(), cr1.getMax(), version));
-        ASSERT_EQ(manager.numberOfRangesToClean(), 1UL);
+        ASSERT_EQ(manager.numberOfRangesToClean(), 0UL);
         ASSERT_EQ(manager.getActiveMetadata()->getChunks().size(), 1UL);
     }
 
@@ -279,11 +276,7 @@ TEST_F(MetadataManagerTest, RefreshAfterNotYetCompletedMigrationMultiplePending)
     manager.refreshActiveMetadata(makeEmptyMetadata());
 
     const ChunkRange cr1(BSON("key" << 0), BSON("key" << 10));
-    manager.beginReceive(cr1);
-
     const ChunkRange cr2(BSON("key" << 30), BSON("key" << 40));
-    manager.beginReceive(cr2);
-
     ASSERT_EQ(manager.getActiveMetadata()->getChunks().size(), 0UL);
 
     ChunkVersion version = manager.getActiveMetadata()->getCollVersion();
@@ -299,13 +292,8 @@ TEST_F(MetadataManagerTest, BeginReceiveWithOverlappingRange) {
     manager.refreshActiveMetadata(makeEmptyMetadata());
 
     const ChunkRange cr1(BSON("key" << 0), BSON("key" << 10));
-    manager.beginReceive(cr1);
-
     const ChunkRange cr2(BSON("key" << 30), BSON("key" << 40));
-    manager.beginReceive(cr2);
-
     const ChunkRange crOverlap(BSON("key" << 5), BSON("key" << 35));
-    manager.beginReceive(crOverlap);
 
     ASSERT_EQ(manager.getActiveMetadata()->getChunks().size(), 0UL);
 }

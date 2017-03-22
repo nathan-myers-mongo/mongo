@@ -161,7 +161,7 @@ void MetadataManager::forgetReceive(const ChunkRange& range) {
 }
 
 void MetadataManager::_setActiveMetadata_inlock(std::unique_ptr<CollectionMetadata> newMetadata) {
-    if (_activeMetadataTracker->usageCounter > 0) {
+    if (_activeMetadataTracker->usageCounter != 0 || !_metadataInUse.empty()) {
         _metadataInUse.push_back(std::move(_activeMetadataTracker));
     }
     _activeMetadataTracker = stdx::make_unique<CollectionMetadataTracker>(std::move(newMetadata));
@@ -215,7 +215,7 @@ ScopedCollectionMetadata::ScopedCollectionMetadata() = default;
 ScopedCollectionMetadata::ScopedCollectionMetadata(
     MetadataManager* manager, MetadataManager::CollectionMetadataTracker* tracker)
     : _manager(manager), _tracker(tracker) {
-    _tracker->usageCounter++;
+    ++_tracker->usageCounter;
 }
 
 // do not call locked
