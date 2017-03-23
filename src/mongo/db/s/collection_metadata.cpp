@@ -118,7 +118,7 @@ std::unique_ptr<CollectionMetadata> CollectionMetadata::clonePlusPending(
     const ChunkType& chunk) const {
     invariant(!rangeMapOverlaps(_chunksMap, chunk.getMin(), chunk.getMax()));
 
-    auto metadata{clone()};
+    std::unique_ptr<CollectionMetadata> metadata{clone()};
 
     // If there are any pending chunks on the interval to be added this is ok, since pending chunks
     // aren't officially tracked yet and something may have changed on servers we do not see yet.
