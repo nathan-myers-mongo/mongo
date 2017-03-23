@@ -168,7 +168,7 @@ public:
      * Tracks deletion of any documents within the range, returning when deletion is complete.
      * Throws if the collection is dropped while it sleeps. Call this with the collection unlocked.
      */
-    static Status waitForClean(OperationContext*, NamespaceString, ChunkRange, OID epoch);
+    static Status waitForClean(OperationContext*, NamespaceString, ChunkRange);
 
     using CleanupNotification = MetadataManager::CleanupNotification;
     /**

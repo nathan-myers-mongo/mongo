@@ -288,7 +288,7 @@ void MetadataManager::_scheduleCleanup(executor::TaskExecutor* executor,
                                        NamespaceString nss,
                                        stdx::mutex* lock) {
     executor->scheduleWork([executor, nss, rangeDeleter, lock](auto&) {
-        // Note: on entry here, the collection may have been dropped and, *lock and *rangeDeleter
+        // Note: on entry here, the collection may have been dropped, and *lock and *rangeDeleter
         // may no longer exist.  Whether they still exist can be known only after
         // CollectionRangeDeleter::cleanupNextRange constructs an AutoGetCollection. That is also
         // the reason why argument nss is passed by value.

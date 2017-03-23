@@ -161,8 +161,7 @@ private:
     Status _notePending(OperationContext* opCtx,
                         const NamespaceString& nss,
                         const BSONObj& min,
-                        const BSONObj& max,
-                        const OID& epoch);
+                        const BSONObj& max);
 
     /**
      * Stops tracking a chunk range between 'min' and 'max' that previously was having data

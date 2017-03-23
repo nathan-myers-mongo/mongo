@@ -36,9 +36,11 @@
 #include "mongo/db/auth/authorization_manager.h"
 #include "mongo/db/auth/authorization_session.h"
 #include "mongo/db/commands.h"
+#include "mongo/db/db_raii.h"
 #include "mongo/db/range_deleter_service.h"
 #include "mongo/db/s/chunk_move_write_concern_options.h"
 #include "mongo/db/s/collection_metadata.h"
+#include "mongo/db/s/collection_sharding_state.h"
 #include "mongo/db/s/migration_source_manager.h"
 #include "mongo/db/s/move_timing_helper.h"
 #include "mongo/db/s/sharding_state.h"
@@ -228,38 +230,18 @@ private:
         }
 
         // Schedule the range deleter
-        RangeDeleterOptions deleterOptions(KeyRange(moveChunkRequest.getNss().ns(),
-                                                    moveChunkRequest.getMinKey().getOwned(),
-                                                    moveChunkRequest.getMaxKey().getOwned(),
-                                                    shardKeyPattern));
-        deleterOptions.writeConcern = writeConcernForRangeDeleter;
-        deleterOptions.waitForOpenCursors = true;
-        deleterOptions.fromMigrate = true;
-        deleterOptions.onlyRemoveOrphanedDocs = true;
-        deleterOptions.removeSaverReason = "post-cleanup";
-
-        if (moveChunkRequest.getWaitForDelete()) {
-            log() << "doing delete inline for cleanup of chunk data";
-
-            string errMsg;
-
-            // This is an immediate delete, and as a consequence, there could be more
-            // deletes happening simultaneously than there are deleter worker threads.
-            if (!getDeleter()->deleteNow(opCtx, deleterOptions, &errMsg)) {
-                log() << "Error occured while performing cleanup: " << redact(errMsg);
-            }
-        } else {
-            log() << "forking for cleanup of chunk data";
-
-            string errMsg;
-            if (!getDeleter()->queueDelete(opCtx,
-                                           deleterOptions,
-                                           NULL,  // Don't want to be notified
-                                           &errMsg)) {
-                log() << "could not queue migration cleanup: " << redact(errMsg);
+        auto range = ChunkRange(moveChunkRequest.getMinKey(), moveChunkRequest.getMaxKey());
+        {
+            AutoGetCollection autoColl(opCtx, moveChunkRequest.getNss(), MODE_IX);
+            auto* css = CollectionShardingState::get(opCtx, moveChunkRequest.getNss());
+            auto metadata = css->getMetadata();
+            if (metadata) {
+                css->cleanUpRange(range);
             }
         }
-
+        if (moveChunkRequest.getWaitForDelete()) {
+            CollectionShardingState::waitForClean(opCtx, moveChunkRequest.getNss(), range);
+        }
         moveTimingHelper.done(7);
         MONGO_FAIL_POINT_PAUSE_WHILE_SET(moveChunkHangAtStep7);
     }

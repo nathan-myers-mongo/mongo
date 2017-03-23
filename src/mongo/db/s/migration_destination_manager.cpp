@@ -599,26 +599,9 @@ void MigrationDestinationManager::_migrateDriver(OperationContext* opCtx,
 
     {
         // 2. Synchronously delete any data which might have been left orphaned in range
-        // being moved
+        // being moved, and wait for completion
 
-        RangeDeleterOptions deleterOptions(
-            KeyRange(_nss.ns(), min.getOwned(), max.getOwned(), shardKeyPattern));
-        deleterOptions.writeConcern = writeConcern;
-
-        // No need to wait since all existing cursors will filter out this range when returning
-        // the results
-        deleterOptions.waitForOpenCursors = false;
-        deleterOptions.fromMigrate = true;
-        deleterOptions.onlyRemoveOrphanedDocs = true;
-        deleterOptions.removeSaverReason = "preCleanup";
-
-        if (!getDeleter()->deleteNow(opCtx, deleterOptions, &_errmsg)) {
-            warning() << "Failed to queue delete for migrate abort: " << redact(_errmsg);
-            setState(FAIL);
-            return;
-        }
-
-        Status status = _notePending(opCtx, _nss, min, max, epoch);
+        Status status = _notePending(opCtx, _nss, min, max);
         if (!status.isOK()) {
             _errmsg = status.reason();
             setState(FAIL);
@@ -1000,8 +983,7 @@ bool MigrationDestinationManager::_flushPendingWrites(OperationContext* opCtx,
 Status MigrationDestinationManager::_notePending(OperationContext* opCtx,
                                                  const NamespaceString& nss,
                                                  const BSONObj& min,
-                                                 const BSONObj& max,
-                                                 const OID& epoch) {
+                                                 const BSONObj& max) {
     ChunkRange footprint(min, max);
     {
         AutoGetCollection autoColl(opCtx, nss, MODE_IX, MODE_X);
@@ -1010,16 +992,11 @@ Status MigrationDestinationManager::_notePending(OperationContext* opCtx,
 
         // This can currently happen because drops aren't synchronized with in-migrations.  The
         // idea for checking this here is that in the future we shouldn't have this problem.
-        if (!metadata || metadata->getCollVersion().epoch() != epoch) {
+        if (!metadata) {
             return {ErrorCodes::StaleShardVersion,
-                    str::stream() << "could not note chunk [" << min << "," << max << ")"
-                                  << " as pending because the epoch for "
+                    str::stream() << "could not note chunk [" << min << "," << max << ") because"
                                   << nss.ns()
-                                  << " has changed from "
-                                  << epoch
-                                  << " to "
-                                  << (metadata ? metadata->getCollVersion().epoch()
-                                               : ChunkVersion::UNSHARDED().epoch())};
+                                  << " is no longer sharded."};
         }
         // start clearing any leftovers that would be in the new chunk
         css->beginReceive(footprint);
@@ -1029,7 +1006,7 @@ Status MigrationDestinationManager::_notePending(OperationContext* opCtx,
         // still exist.
     }
 
-    return CollectionShardingState::waitForClean(opCtx, nss, footprint, epoch);
+    return CollectionShardingState::waitForClean(opCtx, nss, footprint);
 }
 
 Status MigrationDestinationManager::_forgetPending(OperationContext* opCtx,

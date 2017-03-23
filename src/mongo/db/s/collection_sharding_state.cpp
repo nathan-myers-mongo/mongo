@@ -184,9 +184,7 @@ void CollectionShardingState::cleanUpRange(ChunkRange const& orphans) {
 
 Status CollectionShardingState::waitForClean(OperationContext* opCtx,
                                              NamespaceString nss,
-                                             ChunkRange orphanRange,
-                                             OID epoch) {
-
+                                             ChunkRange orphanRange) {
     do {
         auto stillScheduled = CollectionShardingState::CleanupNotification(nullptr);
         {
@@ -194,7 +192,7 @@ Status CollectionShardingState::waitForClean(OperationContext* opCtx,
             // First, see if collection was dropped.
             auto css = CollectionShardingState::get(opCtx, nss);
             auto metadata = css->getMetadata();
-            if (!metadata || metadata->getCollVersion().epoch() != epoch) {
+            if (!metadata) {
                 throw DBException("Collection being migrated was dropped",
                                   ErrorCodes::StaleShardVersion);
             }
@@ -205,7 +203,7 @@ Status CollectionShardingState::waitForClean(OperationContext* opCtx,
             }
         }  // drop collection lock
 
-        log() << "Waiting to delete " << nss.ns() << " range " << orphanRange.toString();
+        log() << "Waiting to delete " << nss.ns() << " range " << redact(orphanRange.toString());
         Status result = stillScheduled->get(opCtx);
         if (!result.isOK()) {
             return {result.code(),
