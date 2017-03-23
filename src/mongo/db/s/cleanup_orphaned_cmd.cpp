@@ -80,63 +80,49 @@ CleanupResult cleanupOrphanedData(OperationContext* opCtx,
                                   string* errMsg) {
     BSONObj startingFromKey = startingFromKeyConst;
 
-    ScopedCollectionMetadata metadata;
     {
         AutoGetCollection autoColl(opCtx, ns, MODE_IS);
-        metadata = CollectionShardingState::get(opCtx, ns.toString())->getMetadata();
-    }
+        auto css = CollectionShardingState::get(opCtx, ns);
+        auto metadata = css->getMetadata();
 
-    if (!metadata) {
-        warning() << "skipping orphaned data cleanup for " << ns.toString()
-                  << ", collection is not sharded";
+        if (!metadata) {
+            warning() << "skipping orphaned data cleanup for " << ns.toString()
+                      << ", collection is not sharded";
 
-        return CleanupResult_Done;
-    }
-
-    BSONObj keyPattern = metadata->getKeyPattern();
-    if (!startingFromKey.isEmpty()) {
-        if (!metadata->isValidKey(startingFromKey)) {
-            *errMsg = stream() << "could not cleanup orphaned data, start key "
-                               << redact(startingFromKey) << " does not match shard key pattern "
-                               << keyPattern;
-
-            warning() << *errMsg;
-            return CleanupResult_Error;
+            return CleanupResult_Done;
         }
-    } else {
-        startingFromKey = metadata->getMinKey();
+
+        BSONObj keyPattern = metadata->getKeyPattern();
+        if (!startingFromKey.isEmpty()) {
+            if (!metadata->isValidKey(startingFromKey)) {
+                *errMsg = stream() << "could not cleanup orphaned data, start key "
+                                   << redact(startingFromKey) << " does not match shard key pattern "
+                                   << keyPattern;
+                warning() << *errMsg;
+                return CleanupResult_Error;
+            }
+        } else {
+            startingFromKey = metadata->getMinKey();
+        }
+
+        KeyRange orphanRange;
+        if (!metadata->getNextOrphanRange(startingFromKey, &orphanRange)) {
+            LOG(1) << "cleanupOrphaned requested for " << ns.toString() << " starting from "
+                   << redact(startingFromKey) << ", no orphan ranges remain";
+            return CleanupResult_Done;
+        }
+        orphanRange.ns = ns.ns();
+        *stoppedAtKey = orphanRange.maxKey;
+
+        LOG(0) << "cleanupOrphaned requested for " << ns.toString() << " starting from "
+               << redact(startingFromKey) << ", removing next orphan range"
+               << " [" << redact(orphanRange.minKey) << "," << redact(orphanRange.maxKey) << ")";
+
+        auto range = ChunkRange(orphanRange.minKey, orphanRange.maxKey);
+        css->cleanUpRange(range);  // start deleting in background
+        // While these cleanups are in flight, no new chunks that overlap them can migrate to the
+        // shard, so it is safe to leave them running.
     }
-
-    KeyRange orphanRange;
-    if (!metadata->getNextOrphanRange(startingFromKey, &orphanRange)) {
-        LOG(1) << "cleanupOrphaned requested for " << ns.toString() << " starting from "
-               << redact(startingFromKey) << ", no orphan ranges remain";
-
-        return CleanupResult_Done;
-    }
-    orphanRange.ns = ns.ns();
-    *stoppedAtKey = orphanRange.maxKey;
-
-    LOG(0) << "cleanupOrphaned requested for " << ns.toString() << " starting from "
-           << redact(startingFromKey) << ", removing next orphan range"
-           << " [" << redact(orphanRange.minKey) << "," << redact(orphanRange.maxKey) << ")";
-
-    // Metadata snapshot may be stale now, but deleter checks metadata again in write lock
-    // before delete.
-    RangeDeleterOptions deleterOptions(orphanRange);
-    deleterOptions.writeConcern = secondaryThrottle;
-    deleterOptions.onlyRemoveOrphanedDocs = true;
-    deleterOptions.fromMigrate = true;
-    // Must wait for cursors since there can be existing cursors with an older
-    // CollectionMetadata.
-    deleterOptions.waitForOpenCursors = true;
-    deleterOptions.removeSaverReason = "cleanup-cmd";
-
-    if (!getDeleter()->deleteNow(opCtx, deleterOptions, errMsg)) {
-        warning() << redact(*errMsg);
-        return CleanupResult_Error;
-    }
-
     return CleanupResult_Continue;
 }
 

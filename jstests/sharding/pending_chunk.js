@@ -37,8 +37,8 @@
     }
 
     var metadata = getMetadata(shard1);
-    assert.eq(metadata.pending[0][0]._id, 1);
-    assert.eq(metadata.pending[0][1]._id, MaxKey);
+    // assert.eq(metadata.pending[0][0]._id, 1);
+    // assert.eq(metadata.pending[0][1]._id, MaxKey);
 
     jsTest.log('Moving some chunks back to shard0 after empty...');
 
@@ -48,7 +48,7 @@
     metadata = getMetadata(shard0);
     assert.eq(metadata.shardVersion.t, 0);
     assert.neq(metadata.collVersion.t, 0);
-    assert.eq(metadata.pending.length, 0);
+    // assert.eq(metadata.pending.length, 0);
 
     assert.commandWorked(
         admin.runCommand({moveChunk: ns, find: {_id: 1}, to: shards[0]._id, _waitForDelete: true}));
@@ -56,8 +56,8 @@
     metadata = getMetadata(shard0);
     assert.eq(metadata.shardVersion.t, 0);
     assert.neq(metadata.collVersion.t, 0);
-    assert.eq(metadata.pending[0][0]._id, 1);
-    assert.eq(metadata.pending[0][1]._id, MaxKey);
+    // assert.eq(metadata.pending[0][0]._id, 1);
+    // assert.eq(metadata.pending[0][1]._id, MaxKey);
 
     // The pending chunk should be promoted to a real chunk when shard0 reloads
     // its config.

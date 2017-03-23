@@ -130,10 +130,6 @@ public:
                 BSONArrayBuilder chunksArr(metadataBuilder.subarrayStart("chunks"));
                 metadata->toBSONChunks(chunksArr);
                 chunksArr.doneFast();
-
-                BSONArrayBuilder pendingArr(metadataBuilder.subarrayStart("pending"));
-                metadata->toBSONPending(pendingArr);
-                pendingArr.doneFast();
             }
             metadataBuilder.doneFast();
         }

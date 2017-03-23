@@ -86,92 +86,6 @@ TEST_F(NoChunkFixture, getDifferentFromEmpty) {
                                                         &differentChunk));
 }
 
-TEST_F(NoChunkFixture, NoPendingChunks) {
-    ASSERT(!makeCollectionMetadata()->keyIsPending(BSON("a" << 15)));
-    ASSERT(!makeCollectionMetadata()->keyIsPending(BSON("a" << 25)));
-}
-
-TEST_F(NoChunkFixture, FirstPendingChunk) {
-    ChunkType chunk;
-    chunk.setMin(BSON("a" << 10));
-    chunk.setMax(BSON("a" << 20));
-
-    auto cloned(makeCollectionMetadata()->clonePlusPending(chunk));
-    ASSERT(cloned->keyIsPending(BSON("a" << 15)));
-    ASSERT(!cloned->keyIsPending(BSON("a" << 25)));
-    ASSERT(cloned->keyIsPending(BSON("a" << 10)));
-    ASSERT(!cloned->keyIsPending(BSON("a" << 20)));
-}
-
-TEST_F(NoChunkFixture, EmptyMultiPendingChunk) {
-    ChunkType chunk;
-    chunk.setMin(BSON("a" << 10));
-    chunk.setMax(BSON("a" << 20));
-
-    auto cloned(makeCollectionMetadata()->clonePlusPending(chunk));
-
-    chunk.setMin(BSON("a" << 40));
-    chunk.setMax(BSON("a" << 50));
-
-    cloned = cloned->clonePlusPending(chunk);
-    ASSERT(cloned->keyIsPending(BSON("a" << 15)));
-    ASSERT(!cloned->keyIsPending(BSON("a" << 25)));
-    ASSERT(cloned->keyIsPending(BSON("a" << 45)));
-    ASSERT(!cloned->keyIsPending(BSON("a" << 55)));
-}
-
-TEST_F(NoChunkFixture, MinusPendingChunk) {
-    ChunkType chunk;
-    chunk.setMin(BSON("a" << 10));
-    chunk.setMax(BSON("a" << 20));
-
-    auto cloned(makeCollectionMetadata()->clonePlusPending(chunk));
-
-    cloned = cloned->cloneMinusPending(chunk);
-    ASSERT(!cloned->keyIsPending(BSON("a" << 15)));
-    ASSERT(!cloned->keyIsPending(BSON("a" << 25)));
-}
-
-TEST_F(NoChunkFixture, OverlappingPendingChunk) {
-    ChunkType chunk;
-    chunk.setMin(BSON("a" << 10));
-    chunk.setMax(BSON("a" << 30));
-
-    auto cloned(makeCollectionMetadata()->clonePlusPending(chunk));
-
-    chunk.setMin(BSON("a" << 20));
-    chunk.setMax(BSON("a" << 40));
-
-    cloned = cloned->clonePlusPending(chunk);
-    ASSERT(!cloned->keyIsPending(BSON("a" << 15)));
-    ASSERT(cloned->keyIsPending(BSON("a" << 25)));
-    ASSERT(cloned->keyIsPending(BSON("a" << 35)));
-    ASSERT(!cloned->keyIsPending(BSON("a" << 45)));
-}
-
-TEST_F(NoChunkFixture, OverlappingPendingChunks) {
-    ChunkType chunk;
-    chunk.setMin(BSON("a" << 10));
-    chunk.setMax(BSON("a" << 30));
-
-    auto cloned(makeCollectionMetadata()->clonePlusPending(chunk));
-
-    chunk.setMin(BSON("a" << 30));
-    chunk.setMax(BSON("a" << 50));
-
-    cloned = cloned->clonePlusPending(chunk);
-
-    chunk.setMin(BSON("a" << 20));
-    chunk.setMax(BSON("a" << 40));
-
-    cloned = cloned->clonePlusPending(chunk);
-
-    ASSERT(!cloned->keyIsPending(BSON("a" << 15)));
-    ASSERT(cloned->keyIsPending(BSON("a" << 25)));
-    ASSERT(cloned->keyIsPending(BSON("a" << 35)));
-    ASSERT(!cloned->keyIsPending(BSON("a" << 45)));
-}
-
 TEST_F(NoChunkFixture, OrphanedDataRangeBegin) {
     auto metadata(makeCollectionMetadata());
 
@@ -206,27 +120,6 @@ TEST_F(NoChunkFixture, OrphanedDataRangeEnd) {
 
     KeyRange keyRange;
     ASSERT(!metadata->getNextOrphanRange(metadata->getMaxKey(), &keyRange));
-}
-
-TEST_F(NoChunkFixture, PendingOrphanedDataRanges) {
-    ChunkType chunk;
-    chunk.setMin(BSON("a" << 10));
-    chunk.setMax(BSON("a" << 20));
-
-    auto cloned(makeCollectionMetadata()->clonePlusPending(chunk));
-
-    KeyRange keyRange;
-    ASSERT(cloned->getNextOrphanRange(cloned->getMinKey(), &keyRange));
-    ASSERT(keyRange.minKey.woCompare(cloned->getMinKey()) == 0);
-    ASSERT(keyRange.maxKey.woCompare(BSON("a" << 10)) == 0);
-    ASSERT(keyRange.keyPattern.woCompare(cloned->getKeyPattern()) == 0);
-
-    ASSERT(cloned->getNextOrphanRange(keyRange.maxKey, &keyRange));
-    ASSERT(keyRange.minKey.woCompare(BSON("a" << 20)) == 0);
-    ASSERT(keyRange.maxKey.woCompare(cloned->getMaxKey()) == 0);
-    ASSERT(keyRange.keyPattern.woCompare(cloned->getKeyPattern()) == 0);
-
-    ASSERT(!cloned->getNextOrphanRange(keyRange.maxKey, &keyRange));
 }
 
 /**
@@ -286,19 +179,6 @@ TEST_F(SingleChunkFixture, GetLastChunkIsFalse) {
 TEST_F(SingleChunkFixture, getDifferentFromOneIsFalse) {
     ChunkType differentChunk;
     ASSERT(!makeCollectionMetadata()->getDifferentChunk(BSON("a" << 10), &differentChunk));
-}
-
-TEST_F(SingleChunkFixture, PlusPendingChunk) {
-    ChunkType chunk;
-    chunk.setMin(BSON("a" << 20));
-    chunk.setMax(BSON("a" << 30));
-
-    auto cloned(makeCollectionMetadata()->clonePlusPending(chunk));
-
-    ASSERT(cloned->keyBelongsToMe(BSON("a" << 15)));
-    ASSERT(!cloned->keyBelongsToMe(BSON("a" << 25)));
-    ASSERT(!cloned->keyIsPending(BSON("a" << 15)));
-    ASSERT(cloned->keyIsPending(BSON("a" << 25)));
 }
 
 TEST_F(SingleChunkFixture, ChunkOrphanedDataRanges) {
@@ -393,27 +273,6 @@ TEST_F(TwoChunksWithGapCompoundKeyFixture, ChunkGapOrphanedDataRanges) {
     ASSERT(keyRange.keyPattern.woCompare(makeCollectionMetadata()->getKeyPattern()) == 0);
 
     ASSERT(!makeCollectionMetadata()->getNextOrphanRange(keyRange.maxKey, &keyRange));
-}
-
-TEST_F(TwoChunksWithGapCompoundKeyFixture, ChunkGapAndPendingOrphanedDataRanges) {
-    ChunkType chunk;
-    chunk.setMin(BSON("a" << 20 << "b" << 0));
-    chunk.setMax(BSON("a" << 30 << "b" << 0));
-
-    auto cloned(makeCollectionMetadata()->clonePlusPending(chunk));
-
-    KeyRange keyRange;
-    ASSERT(cloned->getNextOrphanRange(cloned->getMinKey(), &keyRange));
-    ASSERT(keyRange.minKey.woCompare(cloned->getMinKey()) == 0);
-    ASSERT(keyRange.maxKey.woCompare(BSON("a" << 10 << "b" << 0)) == 0);
-    ASSERT(keyRange.keyPattern.woCompare(cloned->getKeyPattern()) == 0);
-
-    ASSERT(cloned->getNextOrphanRange(keyRange.maxKey, &keyRange));
-    ASSERT(keyRange.minKey.woCompare(BSON("a" << 40 << "b" << 0)) == 0);
-    ASSERT(keyRange.maxKey.woCompare(cloned->getMaxKey()) == 0);
-    ASSERT(keyRange.keyPattern.woCompare(cloned->getKeyPattern()) == 0);
-
-    ASSERT(!cloned->getNextOrphanRange(keyRange.maxKey, &keyRange));
 }
 
 /**

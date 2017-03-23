@@ -431,8 +431,7 @@ long long Helpers::removeRange(OperationContext* opCtx,
                 if (metadataNow) {
                     ShardKeyPattern kp(metadataNow->getKeyPattern());
                     BSONObj key = kp.extractShardKeyFromDoc(obj);
-                    docIsOrphan =
-                        !metadataNow->keyBelongsToMe(key) && !metadataNow->keyIsPending(key);
+                    docIsOrphan = !metadataNow->keyBelongsToMe(key);
                 } else {
                     docIsOrphan = false;
                 }

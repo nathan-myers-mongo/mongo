@@ -65,22 +65,6 @@ public:
     ~CollectionMetadata();
 
     /**
-     * Returns a new metadata's instance based on 'this's state by removing a 'pending' chunk.
-     *
-     * The shard and collection version of the new metadata are unaffected.  The caller owns the
-     * new metadata.
-     */
-    std::unique_ptr<CollectionMetadata> cloneMinusPending(const ChunkType& chunk) const;
-
-    /**
-     * Returns a new metadata's instance based on 'this's state by adding a 'pending' chunk.
-     *
-     * The shard and collection version of the new metadata are unaffected.  The caller owns the
-     * new metadata.
-     */
-    std::unique_ptr<CollectionMetadata> clonePlusPending(const ChunkType& chunk) const;
-
-    /**
      * Returns a full copy of *this.
      */
     std::unique_ptr<CollectionMetadata> clone() const;
@@ -97,12 +81,6 @@ public:
      * collection / chunkset yet. Key must be the full shard key.
      */
     bool keyBelongsToMe(const BSONObj& key) const;
-
-    /**
-     * Returns true if the document key 'key' is or has been migrated to this shard, and may
-     * belong to us after a subsequent config reload.  Key must be the full shard key.
-     */
-    bool keyIsPending(const BSONObj& key) const;
 
     /**
      * Given a key 'lookupKey' in the shard key range, get the next chunk which overlaps or is
@@ -179,11 +157,6 @@ public:
     void toBSONChunks(BSONArrayBuilder& bb) const;
 
     /**
-     * BSON output of the pending metadata into a BSONArray
-     */
-    void toBSONPending(BSONArrayBuilder& bb) const;
-
-    /**
      * String output of the collection and shard versions.
      */
     std::string toStringBasic() const;
@@ -204,9 +177,6 @@ private:
 
     // Map of chunks tracked by this shard
     RangeMap _chunksMap;
-
-    // Map of ranges of chunks that are migrating but have not been confirmed added yet
-    RangeMap _pendingMap;
 
     // A second map from a min key into a range or contiguous chunks. The map is redundant
     // w.r.t. _chunkMap but we expect high chunk contiguity, especially in small
