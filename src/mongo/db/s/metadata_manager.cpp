@@ -168,8 +168,8 @@ void MetadataManager::_retireExpiredMetadata() {
         auto& tracker = _metadataInUse.front();
         if (tracker->orphans) {
             notify = true;
-            log() << "Queries possibly dependent on " << _nss.ns() << " range "
-                  << *tracker->orphans << " finished; scheduling range for deletion";
+            log() << "Queries possibly dependent on " << _nss.ns() << " range " << *tracker->orphans
+                  << " finished; scheduling range for deletion";
             _pushRangeToClean(*tracker->orphans);
         }
         _metadataInUse.pop_front();  // Discard the tracker and its metadata.

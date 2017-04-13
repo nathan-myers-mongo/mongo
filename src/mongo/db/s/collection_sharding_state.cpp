@@ -207,7 +207,9 @@ Status CollectionShardingState::waitForClean(OperationContext* opCtx,
         if (!result.isOK()) {
             return {result.code(),
                     str::stream() << "Failed to delete orphaned collection " << nss.ns()
-                                  << " range " << orphanRange.toString() << ": "
+                                  << " range "
+                                  << orphanRange.toString()
+                                  << ": "
                                   << result.reason()};
         }
     } while (true);
