@@ -144,8 +144,8 @@ void MetadataManager::refreshActiveMetadata(std::unique_ptr<CollectionMetadata> 
         }
         // The remote metadata contains a chunk we were earlier in the process of receiving, so
         // we deem it successfully received.
-        LOG(2) << "Verified chunk " << redact(ChunkRange(min, max).toString()) << " for collection "
-               << _nss.ns() << " has been migrated to this shard earlier";
+        LOG(2) << "Verified chunk " << ChunkRange(min, max) << " for collection " << _nss.ns()
+               << " has been migrated to this shard earlier";
 
         _receivingChunks.erase(it);
         it = _receivingChunks.begin();
@@ -169,8 +169,7 @@ void MetadataManager::_retireExpiredMetadata() {
         if (tracker->orphans) {
             notify = true;
             log() << "Queries possibly dependent on " << _nss.ns() << " range "
-                  << redact((*tracker->orphans).toString())
-                  << " finished; scheduling range for deletion";
+                  << *tracker->orphans << " finished; scheduling range for deletion";
             _pushRangeToClean(*tracker->orphans);
         }
         _metadataInUse.pop_front();  // Discard the tracker and its metadata.
@@ -178,8 +177,7 @@ void MetadataManager::_retireExpiredMetadata() {
     if (_metadataInUse.empty() && _activeMetadataTracker->orphans) {
         notify = true;
         log() << "Queries possibly dependent on " << _nss.ns() << " range "
-              << redact((*_activeMetadataTracker->orphans).toString())
-              << " finished; scheduling range for deletion";
+              << *_activeMetadataTracker->orphans << " finished; scheduling range for deletion";
         _pushRangeToClean(*_activeMetadataTracker->orphans);
         _activeMetadataTracker->orphans = boost::none;
     }
@@ -323,14 +321,14 @@ bool MetadataManager::beginReceive(ChunkRange const& range) {
 
     auto* metadata = _activeMetadataTracker->metadata.get();
     if (_overlapsInUseChunk(range) || metadata->rangeOverlapsChunk(range)) {
-        log() << "Rejecting in-migration to " << _nss.ns() << " range " << redact(range.toString())
+        log() << "Rejecting in-migration to " << _nss.ns() << " range " << range
               << " because a running query might depend on documents in the range";
         return false;
     }
     _addToReceiving(range);
     _pushRangeToClean(range);
-    log() << "Scheduling deletion of any documents in " << _nss.ns() << " range "
-          << redact(range.toString()) << " before migrating in a chunk covering the range";
+    log() << "Scheduling deletion of any documents in " << _nss.ns() << " range " << range
+          << " before migrating in a chunk covering the range";
     return true;
 }
 
@@ -344,7 +342,7 @@ void MetadataManager::forgetReceive(const ChunkRange& range) {
     stdx::lock_guard<stdx::mutex> scopedLock(_managerLock);
     // This is potentially a partially received chunk, which needs to be cleaned up. We know none
     // of these documents are in use, so they can go straight to the deletion queue.
-    log() << "Abandoning in-migration of " << _nss.ns() << " range " << redact(range.toString())
+    log() << "Abandoning in-migration of " << _nss.ns() << " range " << range
           << "; scheduling deletion of any documents already copied";
     invariant(!_overlapsInUseChunk(range) &&
               !_activeMetadataTracker->metadata->rangeOverlapsChunk(range));
@@ -363,8 +361,7 @@ Status MetadataManager::cleanUpRange(ChunkRange const& range) {
     }
     if (!_overlapsInUseChunk(range)) {
         // No running queries can depend on it, so queue it for deletion immediately.
-        log() << "Scheduling " << _nss.ns() << " range " << redact(range.toString())
-              << " for deletion";
+        log() << "Scheduling " << _nss.ns() << " range " << range << " for deletion";
         _pushRangeToClean(range);
     } else {
         invariant(!_metadataInUse.empty());
@@ -374,7 +371,7 @@ Status MetadataManager::cleanUpRange(ChunkRange const& range) {
         }
         _activeMetadataTracker->orphans.emplace(range.getMin().getOwned(),
                                                 range.getMax().getOwned());
-        log() << "Scheduling " << _nss.ns() << " range " << redact(range.toString())
+        log() << "Scheduling " << _nss.ns() << " range " << range
               << " for deletion after all possibly-dependent queries finish";
     }
     return Status::OK();

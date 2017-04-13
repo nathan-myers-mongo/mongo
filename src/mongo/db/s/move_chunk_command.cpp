@@ -231,8 +231,8 @@ private:
         if (moveChunkRequest.getWaitForDelete()) {
             CollectionShardingState::waitForClean(opCtx, moveChunkRequest.getNss(), range);
         } else {
-            log() << "Leaving cleanup of " << moveChunkRequest.getNss().ns() << " range ("
-                  << range.getMin() << ", " << range.getMax() << "] to complete in background";
+            log() << "Leaving cleanup of " << moveChunkRequest.getNss().ns() << " range " << range
+                  << " to complete in background";
         }
         moveTimingHelper.done(7);
         MONGO_FAIL_POINT_PAUSE_WHILE_SET(moveChunkHangAtStep7);

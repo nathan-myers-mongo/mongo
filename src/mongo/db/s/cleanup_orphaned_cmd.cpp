@@ -99,7 +99,7 @@ CleanupResult cleanupOrphanedData(OperationContext* opCtx,
         if (!startingFromKey.isEmpty()) {
             if (!metadata->isValidKey(startingFromKey)) {
                 *errMsg = stream() << "could not cleanup orphaned data, start key "
-                                   << redact(startingFromKey)
+                                   << startingFromKey
                                    << " does not match shard key pattern " << keyPattern;
 
                 log() << *errMsg;

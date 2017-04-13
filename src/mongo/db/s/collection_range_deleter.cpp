@@ -120,8 +120,7 @@ bool CollectionRangeDeleter::cleanUpNextRange(OperationContext* opCtx,
     }
     invariant(range);
     invariant(wrote.isOK() && wrote.getValue() > 0);
-    log() << "Deleted " << wrote.getValue() << " documents in " << nss.ns() << " range ("
-          << range->getMin() << ", " << range->getMax() << "]";
+    log() << "Deleted " << wrote.getValue() << " documents in " << nss.ns() << " range " << *range;
 
     // wait for replication outside the lock
     auto clientOpTime = repl::ReplClientInfo::forClient(opCtx->getClient()).getLastOp();

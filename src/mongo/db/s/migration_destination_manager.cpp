@@ -972,10 +972,8 @@ Status MigrationDestinationManager::_notePending(OperationContext* opCtx,
     // start clearing any leftovers that would be in the new chunk
     if (!css->beginReceive(range)) {
         return {ErrorCodes::RangeOverlapConflict,
-                str::stream() << "Collection " << nss.ns() << " range [" << redact(range.getMin())
-                              << ", "
-                              << redact(range.getMax())
-                              << ") migration aborted; documents in range may still"
+                str::stream() << "Collection " << nss.ns() << " range " << range.toString()
+                              << " migration aborted; documents in range may still"
                                  "  be in use on the destination shard."};
     }
     return Status::OK();

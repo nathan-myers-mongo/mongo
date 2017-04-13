@@ -197,21 +197,17 @@ Status CollectionShardingState::waitForClean(OperationContext* opCtx,
             }
             stillScheduled = css->_metadataManager.trackCleanup(orphanRange);
             if (stillScheduled == nullptr) {
-                log() << "Finished deleting " << nss.ns() << " range "
-                      << redact(orphanRange.toString());
+                log() << "Finished deleting " << nss.ns() << " range " << orphanRange;
                 return Status::OK();  // done!
             }
         }  // drop collection lock
 
-        log() << "Waiting for deletion of " << nss.ns() << " range "
-              << redact(orphanRange.toString());
+        log() << "Waiting for deletion of " << nss.ns() << " range " << orphanRange;
         Status result = stillScheduled->get(opCtx);
         if (!result.isOK()) {
             return {result.code(),
                     str::stream() << "Failed to delete orphaned collection " << nss.ns()
-                                  << " range "
-                                  << redact(orphanRange.toString())
-                                  << ": "
+                                  << " range " << orphanRange.toString() << ": "
                                   << result.reason()};
         }
     } while (true);
