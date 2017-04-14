@@ -120,6 +120,19 @@ void MetadataManager::refreshActiveMetadata(std::unique_ptr<CollectionMetadata> 
         return;
     }
 
+    // If the metadata being installed has a different epoch from ours, this means the collection
+    // was dropped and recreated, so we must entirely reset the metadata state
+    if (_activeMetadataTracker->metadata->getCollVersion().epoch() !=
+        remoteMetadata->getCollVersion().epoch()) {
+        log() << "Overwriting metadata for collection " << _nss.ns() << " from "
+              << _activeMetadataTracker->metadata->toStringBasic() << " to "
+              << remoteMetadata->toStringBasic() << " due to epoch change";
+
+        _receivingChunks.clear();
+        _rangesToClean.clear(Status::OK());
+        return;
+    }
+
     // We already have newer version
     if (_activeMetadataTracker->metadata->getCollVersion() >= remoteMetadata->getCollVersion()) {
         LOG(1) << "Ignoring refresh of active metadata "
@@ -278,7 +291,6 @@ void MetadataManager::append(BSONObjBuilder* builder) {
         pcArr.append(obj.done());
     }
     pcArr.done();
-
 
     BSONArrayBuilder amrArr(builder->subarrayStart("activeMetadataRanges"));
     for (const auto& entry : _activeMetadataTracker->metadata->getChunks()) {
