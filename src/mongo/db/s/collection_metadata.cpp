@@ -62,12 +62,12 @@ CollectionMetadata::CollectionMetadata(const BSONObj& keyPattern,
     }
     invariant(_shardVersion.isSet());
 
-    _rebuildRangesMap();
+    _buildRangesMap();
 }
 
 CollectionMetadata::~CollectionMetadata() = default;
 
-void CollectionMetadata::_rebuildRangesMap() {
+void CollectionMetadata::_buildRangesMap() {
     _rangesMap.clear();
 
     // Load the chunk information, coalescing their ranges. The version for this shard would be

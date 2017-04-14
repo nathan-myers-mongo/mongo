@@ -175,7 +175,7 @@ private:
      * Clears and rebuilds _rangesMap from the contents of _chunksMap.
      */
 
-    void _rebuildRangesMap();
+    void _buildRangesMap();
 
     // Shard key pattern for the collection
     ShardKeyPattern _shardKeyPattern;
