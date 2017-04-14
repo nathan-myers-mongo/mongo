@@ -161,11 +161,6 @@ public:
     void toBSONChunks(BSONArrayBuilder& bb) const;
 
     /**
-     * BSON output of the pending metadata into a BSONArray
-     */
-    void toBSONPending(BSONArrayBuilder& bb) const;
-
-    /**
      * String output of the collection and shard versions.
      */
     std::string toStringBasic() const;
