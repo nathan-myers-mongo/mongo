@@ -111,14 +111,14 @@ ScopedCollectionMetadata CollectionShardingState::getMetadata() {
 }
 
 void CollectionShardingState::refreshMetadata(OperationContext* opCtx,
-                                              std::unique_ptr<CollectionMetadata> newMetadata) {
+                                              CollectionMetadata newMetadata) {
     invariant(opCtx->lockState()->isCollectionLockedForMode(_nss.ns(), MODE_X));
 
     _metadataManager.refreshActiveMetadata(std::move(newMetadata));
 }
 
 void CollectionShardingState::markNotShardedAtStepdown() {
-    _metadataManager.refreshActiveMetadata(nullptr);
+    _metadataManager.unshard();
 }
 
 bool CollectionShardingState::beginReceive(ChunkRange const& range) {

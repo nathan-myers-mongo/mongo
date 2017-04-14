@@ -101,10 +101,10 @@ protected:
         return stdx::make_unique<ShardingCatalogClientMock>(std::move(distLockManager));
     }
 
-    static std::unique_ptr<CollectionMetadata> makeEmptyMetadata() {
+    static CollectionMetadata makeEmptyMetadata() {
         const OID epoch = OID::gen();
 
-        return stdx::make_unique<CollectionMetadata>(
+        return CollectionMetadata(
             BSON("key" << 1),
             ChunkVersion(1, 0, epoch),
             ChunkVersion(0, 0, epoch),
@@ -119,7 +119,7 @@ protected:
      * It will fassert if the chunk bounds are incorrect or overlap an existing chunk or if the
      * chunk version is lower than the maximum one.
      */
-    static std::unique_ptr<CollectionMetadata> cloneMetadataPlusChunk(
+    static CollectionMetadata cloneMetadataPlusChunk(
         const CollectionMetadata& metadata,
         const BSONObj& minKey,
         const BSONObj& maxKey,
@@ -133,42 +133,19 @@ protected:
         chunksMap.insert(
             std::make_pair(minKey.getOwned(), CachedChunkInfo(maxKey.getOwned(), chunkVersion)));
 
-        return stdx::make_unique<CollectionMetadata>(
+        return CollectionMetadata(
             metadata.getKeyPattern(), chunkVersion, chunkVersion, std::move(chunksMap));
     }
 
-    CollectionMetadata* addChunk(MetadataManager* manager) {
+    void addChunk(MetadataManager* manager) {
         ScopedCollectionMetadata scopedMetadata1 = manager->getActiveMetadata();
 
         ChunkVersion newVersion = scopedMetadata1->getCollVersion();
         newVersion.incMajor();
-        std::unique_ptr<CollectionMetadata> cm2 = cloneMetadataPlusChunk(
+        CollectionMetadata cm2 = cloneMetadataPlusChunk(
             *scopedMetadata1.getMetadata(), BSON("key" << 0), BSON("key" << 20), newVersion);
-        auto cm2Ptr = cm2.get();
-
         manager->refreshActiveMetadata(std::move(cm2));
-        return cm2Ptr;
     }
-};
-
-TEST_F(MetadataManagerTest, SetAndGetActiveMetadata) {
-    MetadataManager manager(getServiceContext(), kNss, executor());
-    std::unique_ptr<CollectionMetadata> cm = makeEmptyMetadata();
-    auto cmPtr = cm.get();
-
-    manager.refreshActiveMetadata(std::move(cm));
-    ScopedCollectionMetadata scopedMetadata = manager.getActiveMetadata();
-
-    ASSERT_EQ(cmPtr, scopedMetadata.getMetadata());
-};
-
-
-TEST_F(MetadataManagerTest, ResetActiveMetadata) {
-    MetadataManager manager(getServiceContext(), kNss, executor());
-    manager.refreshActiveMetadata(makeEmptyMetadata());
-    auto cm2Ptr = addChunk(&manager);
-    ScopedCollectionMetadata scopedMetadata2 = manager.getActiveMetadata();
-    ASSERT_EQ(cm2Ptr, scopedMetadata2.getMetadata());
 };
 
 // In the following tests, the ranges-to-clean is not drained by the background deleter thread
@@ -318,7 +295,7 @@ TEST_F(MetadataManagerTest, RefreshMetadataAfterDropAndRecreate) {
     ChunkVersion newVersion = manager.getActiveMetadata()->getCollVersion();
     newVersion.incMajor();
     manager.refreshActiveMetadata(cloneMetadataPlusChunk(
-        *recreateMetadata, BSON("key" << 20), BSON("key" << 30), newVersion));
+        recreateMetadata, BSON("key" << 20), BSON("key" << 30), newVersion));
     ASSERT_EQ(manager.getActiveMetadata()->getChunks().size(), 1UL);
 
     const auto chunkEntry = manager.getActiveMetadata()->getChunks().begin();

@@ -27,6 +27,8 @@ using std::vector;
     return static_cast<IntOut>(x < 0 ? (x - 0.5) : (x + 0.5));
   }
 
+// template int MathUtil::Round<int,double>(double x);
+
 template int MathUtil::Round<int,double>(double x);
 
 MathUtil::QuadraticRootType MathUtil::RealRootsForQuadratic(long double a,

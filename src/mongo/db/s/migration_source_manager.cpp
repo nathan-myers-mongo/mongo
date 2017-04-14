@@ -402,7 +402,7 @@ Status MigrationSourceManager::commitChunkMetadataOnConfig(OperationContext* opC
     } else {
         AutoGetCollection autoColl(opCtx, getNss(), MODE_IX, MODE_X);
 
-        CollectionShardingState::get(opCtx, getNss())->refreshMetadata(opCtx, nullptr);
+        CollectionShardingState::get(opCtx, getNss())->unshard();
 
         log() << "Failed to refresh metadata after a failed commit attempt. Metadata was cleared "
                  "so it will get a full refresh when accessed again"

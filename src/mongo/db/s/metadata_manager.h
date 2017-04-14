@@ -50,6 +50,8 @@ class ScopedCollectionMetadata;
 class MetadataManager {
     MONGO_DISALLOW_COPYING(MetadataManager);
 
+    using Ref = std::list<CollectionMetadata>::iterator;
+
 public:
     MetadataManager(ServiceContext*, NamespaceString nss, executor::TaskExecutor* rangeDeleter);
     ~MetadataManager();
@@ -73,7 +75,9 @@ public:
     /**
      * Uses the contents of the specified metadata as a way to purge any pending chunks.
      */
-    void refreshActiveMetadata(std::unique_ptr<CollectionMetadata> newMetadata);
+    void refreshActiveMetadata(CollectionMetadata newMetadata);
+
+    void unshard();
 
     void toBSONPending(BSONArrayBuilder& bb) const;
 
@@ -137,17 +141,6 @@ public:
     boost::optional<KeyRange> getNextOrphanRange(BSONObj const& from);
 
 private:
-    struct CollectionMetadataTracker {
-        /**
-         * Creates a new CollectionMetadataTracker with the usageCounter initialized to zero.
-         */
-        CollectionMetadataTracker(std::unique_ptr<CollectionMetadata> m);
-
-        std::unique_ptr<CollectionMetadata> metadata;
-        uint32_t usageCounter{0};
-        boost::optional<ChunkRange> orphans{boost::none};
-    };
-
     /**
      * Retires any metadata that has fallen out of use, and pushes any orphan ranges found in them
      * to the list of ranges actively being cleaned up.
@@ -158,12 +151,12 @@ private:
      * Atomically decrements scoped.tracker->usageCount under our own mutex. At zero, retires any
      * metadata that has fallen out of use. Calling with a null scoped.tracker is a no-op.
      */
-    void _decrementTrackerUsage(ScopedCollectionMetadata const& scoped);
+    void _decrementUsage(ScopedCollectionMetadata const& scoped);
 
     /**
      * Pushes current set of chunks, if any, to _metadataInUse, replaces it with newMetadata.
      */
-    void _setActiveMetadata_inlock(std::unique_ptr<CollectionMetadata> newMetadata);
+    void _setActiveMetadata_inlock(CollectionMetadata newMetadata);
 
     /**
      * Returns true if the specified range overlaps any chunk that might be currently in use by a
@@ -228,11 +221,11 @@ private:
     stdx::mutex _managerLock;
 
     // The currently active collection metadata
-    std::unique_ptr<CollectionMetadataTracker> _activeMetadataTracker;
+    Ref _activeMetadata{};
 
     // Previously active collection metadata instances still in use by active server operations or
     // cursors
-    std::list<std::unique_ptr<CollectionMetadataTracker>> _metadataInUse;
+    std::list<CollectionMetadata> _metadataInUse;
 
     // Chunk ranges which are currently assumed to be transferred to the shard. Indexed by the min
     // key of the range.
@@ -248,7 +241,7 @@ private:
     // Ranges being deleted, or scheduled to be deleted, by a background task
     CollectionRangeDeleter _rangesToClean;
 
-    // for access to _decrementTrackerUsage()
+    // for access to _decrementUsage()
     friend class ScopedCollectionMetadata;
 
     // for access to _rangesToClean and _managerLock under task callback
@@ -288,18 +281,17 @@ public:
 
 private:
     /**
-     * Increments the refcount in the specified tracker.
+     * Increments the refcount in the specified CollectionMetadata tracker.
      *
      * Must be called with specified *manager locked.
      */
-    ScopedCollectionMetadata(MetadataManager* manager,
-                             MetadataManager::CollectionMetadataTracker* tracker);
+    ScopedCollectionMetadata(MetadataManager* manager, MetadataManager::Ref ref);
 
-    MetadataManager* _manager{nullptr};
-    MetadataManager::CollectionMetadataTracker* _tracker{nullptr};
+    MetadataManager::Ref _metadata{};
+    MetadataManager* _manager{};
 
     friend ScopedCollectionMetadata MetadataManager::getActiveMetadata();  // uses our private ctor
-    friend void MetadataManager::_decrementTrackerUsage(ScopedCollectionMetadata const&);
+    friend void MetadataManager::_decrementUsage(ScopedCollectionMetadata const&);
 };
 
 }  // namespace mongo

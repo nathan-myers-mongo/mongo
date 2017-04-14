@@ -105,7 +105,9 @@ public:
      *
      * Must always be called with an exclusive collection lock.
      */
-    void refreshMetadata(OperationContext* opCtx, std::unique_ptr<CollectionMetadata> newMetadata);
+    void refreshMetadata(OperationContext* opCtx, CollectionMetadata newMetadata);
+
+    void unshard() { _metadataManager.unshard(); }
 
     /**
      * Marks the collection as not sharded at stepdown time so that no filtering will occur for

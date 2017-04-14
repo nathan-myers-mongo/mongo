@@ -110,7 +110,7 @@ void CollectionRangeDeleterTest::setUp() {
         const OID epoch = OID::gen();
         collectionShardingState->refreshMetadata(
             operationContext(),
-            stdx::make_unique<CollectionMetadata>(
+            CollectionMetadata(
                 kKeyPattern,
                 ChunkVersion(1, 0, epoch),
                 ChunkVersion(0, 0, epoch),
@@ -122,7 +122,7 @@ void CollectionRangeDeleterTest::tearDown() {
     {
         AutoGetCollection autoColl(operationContext(), kNss, MODE_IX);
         auto collectionShardingState = CollectionShardingState::get(operationContext(), kNss);
-        collectionShardingState->refreshMetadata(operationContext(), nullptr);
+        collectionShardingState->unshard();
     }
     ShardingMongodTestFixture::tearDown();
 }

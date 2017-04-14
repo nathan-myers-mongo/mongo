@@ -62,12 +62,21 @@ CollectionMetadata::CollectionMetadata(const BSONObj& keyPattern,
     }
     invariant(_shardVersion.isSet());
 
-    _rebuildRangesMap();
+    _buildRangesMap();
+}
+
+CollectionMetadata::CollectionMetadata(CollectionMetadata const& other)
+    : _shardKeyPattern(other._shardKeyPattern.toBSON()),
+      _collVersion(other._collVersion),
+      _shardVersion(other._shardVersion),
+      _chunksMap(other._chunksMap),
+      _rangesMap(SimpleBSONObjComparator::kInstance.makeBSONObjIndexedMap<CachedChunkInfo>()) {
+      _buildRangesMap();
 }
 
 CollectionMetadata::~CollectionMetadata() = default;
 
-void CollectionMetadata::_rebuildRangesMap() {
+void CollectionMetadata::_buildRangesMap() {
     _rangesMap.clear();
 
     // Load the chunk information, coalescing their ranges. The version for this shard would be
@@ -101,11 +110,6 @@ void CollectionMetadata::_rebuildRangesMap() {
     invariant(!max.isEmpty());
 
     _rangesMap.emplace(min, CachedChunkInfo(max, ChunkVersion::IGNORED()));
-}
-
-std::unique_ptr<CollectionMetadata> CollectionMetadata::clone() const {
-    return stdx::make_unique<CollectionMetadata>(
-        _shardKeyPattern.toBSON(), getCollVersion(), getShardVersion(), getChunks());
 }
 
 bool CollectionMetadata::keyBelongsToMe(const BSONObj& key) const {

@@ -59,12 +59,13 @@ public:
                        ChunkVersion shardVersion,
                        RangeMap shardChunksMap);
 
-    ~CollectionMetadata();
 
-    /**
-     * Returns a new metadata's instance based on 'this's state;
-     */
-    std::unique_ptr<CollectionMetadata> clone() const;
+    CollectionMetadata(CollectionMetadata const&);
+    CollectionMetadata(CollectionMetadata&&) = default;
+    CollectionMetadata& operator=(CollectionMetadata const&) = delete;
+    CollectionMetadata& operator=(CollectionMetadata&&) = default;
+
+    ~CollectionMetadata();
 
     /**
      * Returns true if the document key 'key' is a valid instance of a shard key for this
@@ -170,12 +171,21 @@ public:
      */
     std::string toStringBasic() const;
 
+    // These are annotations maintained exclusively by MetadataManager
+    class {
+        bool isReferenced() {
+            return refCount != 0;
+        }
+        int refCount{0};
+        boost::optional<ChunkRange> orphans{boost::none};
+        friend class MetadataManager;
+    } tracker;
+
 private:
     /**
-     * Clears and rebuilds _rangesMap from the contents of _chunksMap.
+     * Builds _rangesMap from the contents of _chunksMap.
      */
-
-    void _rebuildRangesMap();
+    void _buildRangesMap();
 
     // Shard key pattern for the collection
     ShardKeyPattern _shardKeyPattern;
