@@ -104,6 +104,7 @@ public:
                  const BSONObj& min,
                  const BSONObj& max,
                  const BSONObj& shardKeyPattern,
+                 const OID& epoch,
                  const WriteConcernOptions& writeConcern);
 
     /**
@@ -128,6 +129,7 @@ private:
                         BSONObj max,
                         BSONObj shardKeyPattern,
                         ConnectionString fromShardConnString,
+                        const OID& epoch,
                         WriteConcernOptions writeConcern);
 
     void _migrateDriver(OperationContext* opCtx,
@@ -135,6 +137,7 @@ private:
                         const BSONObj& max,
                         const BSONObj& shardKeyPattern,
                         const ConnectionString& fromShardConnString,
+                        const OID& epoch,
                         const WriteConcernOptions& writeConcern);
 
     bool _applyMigrateOp(OperationContext* opCtx,

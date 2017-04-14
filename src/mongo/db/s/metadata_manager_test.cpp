@@ -124,6 +124,7 @@ protected:
         const BSONObj& minKey,
         const BSONObj& maxKey,
         const ChunkVersion& chunkVersion) {
+        invariant(chunkVersion.epoch() == metadata.getShardVersion().epoch());
         invariant(chunkVersion.isSet());
         invariant(chunkVersion > metadata.getCollVersion());
         invariant(minKey.woCompare(maxKey) < 0);

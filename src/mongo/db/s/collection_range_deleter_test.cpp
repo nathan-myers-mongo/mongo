@@ -155,21 +155,15 @@ TEST_F(CollectionRangeDeleterTest, NothingToDo) {
 TEST_F(CollectionRangeDeleterTest, NoDataInGivenRangeToClean) {
     CollectionRangeDeleter rangeDeleter;
     const BSONObj insertedDoc = BSON(kPattern << 25);
-    {
-        AutoGetCollection autoColl(operationContext(), kNss, MODE_IX);
-        _dbDirectClient->insert(kNss.toString(), insertedDoc);
-        ASSERT_BSONOBJ_EQ(insertedDoc,
-                          _dbDirectClient->findOne(kNss.toString(), QUERY(kPattern << 25)));
-    }
+    _dbDirectClient->insert(kNss.toString(), insertedDoc);
+    ASSERT_BSONOBJ_EQ(insertedDoc,
+                      _dbDirectClient->findOne(kNss.toString(), QUERY(kPattern << 25)));
 
     rangeDeleter.add(ChunkRange(BSON(kPattern << 0), BSON(kPattern << 10)));
     ASSERT_TRUE(next(rangeDeleter, 1));
 
-    {
-        AutoGetCollection autoColl(operationContext(), kNss, MODE_IX);
-        ASSERT_BSONOBJ_EQ(insertedDoc,
-                          _dbDirectClient->findOne(kNss.toString(), QUERY(kPattern << 25)));
-    }
+    ASSERT_BSONOBJ_EQ(insertedDoc,
+                      _dbDirectClient->findOne(kNss.toString(), QUERY(kPattern << 25)));
 
     ASSERT_FALSE(next(rangeDeleter, 1));
 }
@@ -178,13 +172,9 @@ TEST_F(CollectionRangeDeleterTest, NoDataInGivenRangeToClean) {
 TEST_F(CollectionRangeDeleterTest, OneDocumentInOneRangeToClean) {
     CollectionRangeDeleter rangeDeleter;
     const BSONObj insertedDoc = BSON(kPattern << 5);
-    {
-        AutoGetCollection autoColl(operationContext(), kNss, MODE_IX);
-
-        _dbDirectClient->insert(kNss.toString(), BSON(kPattern << 5));
-        ASSERT_BSONOBJ_EQ(insertedDoc,
-                          _dbDirectClient->findOne(kNss.toString(), QUERY(kPattern << 5)));
-    }
+    _dbDirectClient->insert(kNss.toString(), BSON(kPattern << 5));
+    ASSERT_BSONOBJ_EQ(insertedDoc,
+                _dbDirectClient->findOne(kNss.toString(), QUERY(kPattern << 5)));
 
     rangeDeleter.add(ChunkRange(BSON(kPattern << 0), BSON(kPattern << 10)));
 
@@ -197,22 +187,16 @@ TEST_F(CollectionRangeDeleterTest, OneDocumentInOneRangeToClean) {
 // Tests the case that there are multiple documents within a range to clean.
 TEST_F(CollectionRangeDeleterTest, MultipleDocumentsInOneRangeToClean) {
     CollectionRangeDeleter rangeDeleter;
-    {
-        AutoGetCollection autoColl(operationContext(), kNss, MODE_IX);
-        _dbDirectClient->insert(kNss.toString(), BSON(kPattern << 1));
-        _dbDirectClient->insert(kNss.toString(), BSON(kPattern << 2));
-        _dbDirectClient->insert(kNss.toString(), BSON(kPattern << 3));
-        ASSERT_EQUALS(3ULL, _dbDirectClient->count(kNss.toString(), BSON(kPattern << LT << 5)));
-    }
+    _dbDirectClient->insert(kNss.toString(), BSON(kPattern << 1));
+    _dbDirectClient->insert(kNss.toString(), BSON(kPattern << 2));
+    _dbDirectClient->insert(kNss.toString(), BSON(kPattern << 3));
+    ASSERT_EQUALS(3ULL, _dbDirectClient->count(kNss.toString(), BSON(kPattern << LT << 5)));
 
     rangeDeleter.add(ChunkRange(BSON(kPattern << 0), BSON(kPattern << 10)));
 
     ASSERT_TRUE(next(rangeDeleter, 100));
     ASSERT_TRUE(next(rangeDeleter, 100));
-    {
-        AutoGetCollection autoColl(operationContext(), kNss, MODE_IX);
-        ASSERT_EQUALS(0ULL, _dbDirectClient->count(kNss.toString(), BSON(kPattern << LT << 5)));
-    }
+    ASSERT_EQUALS(0ULL, _dbDirectClient->count(kNss.toString(), BSON(kPattern << LT << 5)));
     ASSERT_FALSE(next(rangeDeleter, 100));
 }
 
@@ -220,34 +204,22 @@ TEST_F(CollectionRangeDeleterTest, MultipleDocumentsInOneRangeToClean) {
 // has a max deletion rate of one document per run.
 TEST_F(CollectionRangeDeleterTest, MultipleCleanupNextRangeCalls) {
     CollectionRangeDeleter rangeDeleter;
-    {
-        AutoGetCollection autoColl(operationContext(), kNss, MODE_IX);
-        _dbDirectClient->insert(kNss.toString(), BSON(kPattern << 1));
-        _dbDirectClient->insert(kNss.toString(), BSON(kPattern << 2));
-        _dbDirectClient->insert(kNss.toString(), BSON(kPattern << 3));
-        ASSERT_EQUALS(3ULL, _dbDirectClient->count(kNss.toString(), BSON(kPattern << LT << 5)));
-    }
+    _dbDirectClient->insert(kNss.toString(), BSON(kPattern << 1));
+    _dbDirectClient->insert(kNss.toString(), BSON(kPattern << 2));
+    _dbDirectClient->insert(kNss.toString(), BSON(kPattern << 3));
+    ASSERT_EQUALS(3ULL, _dbDirectClient->count(kNss.toString(), BSON(kPattern << LT << 5)));
 
     rangeDeleter.add(ChunkRange(BSON(kPattern << 0), BSON(kPattern << 10)));
 
     ASSERT_TRUE(next(rangeDeleter, 1));
-    {
-        AutoGetCollection autoColl(operationContext(), kNss, MODE_IX);
-        ASSERT_EQUALS(2ULL, _dbDirectClient->count(kNss.toString(), BSON(kPattern << LT << 5)));
-    }
+    ASSERT_EQUALS(2ULL, _dbDirectClient->count(kNss.toString(), BSON(kPattern << LT << 5)));
 
     ASSERT_TRUE(next(rangeDeleter, 1));
-    {
-        AutoGetCollection autoColl(operationContext(), kNss, MODE_IX);
-        ASSERT_EQUALS(1ULL, _dbDirectClient->count(kNss.toString(), BSON(kPattern << LT << 5)));
-    }
+    ASSERT_EQUALS(1ULL, _dbDirectClient->count(kNss.toString(), BSON(kPattern << LT << 5)));
 
     ASSERT_TRUE(next(rangeDeleter, 1));
     ASSERT_TRUE(next(rangeDeleter, 1));
-    {
-        AutoGetCollection autoColl(operationContext(), kNss, MODE_IX);
-        ASSERT_EQUALS(0ULL, _dbDirectClient->count(kNss.toString(), BSON(kPattern << LT << 5)));
-    }
+    ASSERT_EQUALS(0ULL, _dbDirectClient->count(kNss.toString(), BSON(kPattern << LT << 5)));
     ASSERT_FALSE(next(rangeDeleter, 1));
 }
 
@@ -255,16 +227,13 @@ TEST_F(CollectionRangeDeleterTest, MultipleCleanupNextRangeCalls) {
 // Tests the case that there are two ranges to clean, each containing multiple documents.
 TEST_F(CollectionRangeDeleterTest, MultipleDocumentsInMultipleRangesToClean) {
     CollectionRangeDeleter rangeDeleter;
-    {
-        AutoGetCollection autoColl(operationContext(), kNss, MODE_IX);
-        _dbDirectClient->insert(kNss.toString(), BSON(kPattern << 1));
-        _dbDirectClient->insert(kNss.toString(), BSON(kPattern << 2));
-        _dbDirectClient->insert(kNss.toString(), BSON(kPattern << 3));
-        _dbDirectClient->insert(kNss.toString(), BSON(kPattern << 4));
-        _dbDirectClient->insert(kNss.toString(), BSON(kPattern << 5));
-        _dbDirectClient->insert(kNss.toString(), BSON(kPattern << 6));
-        ASSERT_EQUALS(6ULL, _dbDirectClient->count(kNss.toString(), BSON(kPattern << LT << 10)));
-    }
+    _dbDirectClient->insert(kNss.toString(), BSON(kPattern << 1));
+    _dbDirectClient->insert(kNss.toString(), BSON(kPattern << 2));
+    _dbDirectClient->insert(kNss.toString(), BSON(kPattern << 3));
+    _dbDirectClient->insert(kNss.toString(), BSON(kPattern << 4));
+    _dbDirectClient->insert(kNss.toString(), BSON(kPattern << 5));
+    _dbDirectClient->insert(kNss.toString(), BSON(kPattern << 6));
+    ASSERT_EQUALS(6ULL, _dbDirectClient->count(kNss.toString(), BSON(kPattern << LT << 10)));
 
     const ChunkRange chunkRange1 = ChunkRange(BSON(kPattern << 0), BSON(kPattern << 4));
     const ChunkRange chunkRange2 = ChunkRange(BSON(kPattern << 4), BSON(kPattern << 7));
@@ -272,19 +241,13 @@ TEST_F(CollectionRangeDeleterTest, MultipleDocumentsInMultipleRangesToClean) {
     rangeDeleter.add(chunkRange2);
 
     ASSERT_TRUE(next(rangeDeleter, 100));
-    {
-        AutoGetCollection autoColl(operationContext(), kNss, MODE_IX);
-        ASSERT_EQUALS(0ULL, _dbDirectClient->count(kNss.toString(), BSON(kPattern << LT << 4)));
-        ASSERT_EQUALS(3ULL, _dbDirectClient->count(kNss.toString(), BSON(kPattern << LT << 10)));
-    }
+    ASSERT_EQUALS(0ULL, _dbDirectClient->count(kNss.toString(), BSON(kPattern << LT << 4)));
+    ASSERT_EQUALS(3ULL, _dbDirectClient->count(kNss.toString(), BSON(kPattern << LT << 10)));
 
     ASSERT_TRUE(next(rangeDeleter, 100));
     ASSERT_TRUE(next(rangeDeleter, 100));
     ASSERT_TRUE(next(rangeDeleter, 1));
-    {
-        AutoGetCollection autoColl(operationContext(), kNss, MODE_IX);
-        ASSERT_EQUALS(0ULL, _dbDirectClient->count(kNss.toString(), BSON(kPattern << LT << 10)));
-    }
+    ASSERT_EQUALS(1ULL, _dbDirectClient->count(kNss.toString(), BSON(kPattern << LT << 10)));
     ASSERT_FALSE(next(rangeDeleter, 1));
 }
 

@@ -294,6 +294,7 @@ Status MigrationDestinationManager::start(const NamespaceString& nss,
                                           const BSONObj& min,
                                           const BSONObj& max,
                                           const BSONObj& shardKeyPattern,
+                                          const OID& epoch,
                                           const WriteConcernOptions& writeConcern) {
     stdx::lock_guard<stdx::mutex> lk(_mutex);
     invariant(!_sessionId);
@@ -328,8 +329,8 @@ Status MigrationDestinationManager::start(const NamespaceString& nss,
     }
 
     _migrateThreadHandle =
-        stdx::thread([this, min, max, shardKeyPattern, fromShardConnString, writeConcern]() {
-            _migrateThread(min, max, shardKeyPattern, fromShardConnString, writeConcern);
+        stdx::thread([this, min, max, shardKeyPattern, fromShardConnString, epoch, writeConcern]() {
+            _migrateThread(min, max, shardKeyPattern, fromShardConnString, epoch, writeConcern);
         });
 
     return Status::OK();
@@ -409,6 +410,7 @@ void MigrationDestinationManager::_migrateThread(BSONObj min,
                                                  BSONObj max,
                                                  BSONObj shardKeyPattern,
                                                  ConnectionString fromShardConnString,
+                                                 OID epoch,
                                                  WriteConcernOptions writeConcern) {
     Client::initThread("migrateThread");
     auto opCtx = getGlobalServiceContext()->makeOperationContext(&cc());
@@ -418,7 +420,8 @@ void MigrationDestinationManager::_migrateThread(BSONObj min,
     }
 
     try {
-        _migrateDriver(opCtx.get(), min, max, shardKeyPattern, fromShardConnString, writeConcern);
+        _migrateDriver(
+            opCtx.get(), min, max, shardKeyPattern, fromShardConnString, epoch, writeConcern);
     } catch (std::exception& e) {
         setStateFail(str::stream() << "migrate failed: " << redact(e.what()));
     } catch (...) {
@@ -440,6 +443,7 @@ void MigrationDestinationManager::_migrateDriver(OperationContext* opCtx,
                                                  const BSONObj& max,
                                                  const BSONObj& shardKeyPattern,
                                                  const ConnectionString& fromShardConnString,
+                                                 const OID&,
                                                  const WriteConcernOptions& writeConcern) {
     invariant(isActive());
     invariant(_sessionId);
@@ -448,8 +452,8 @@ void MigrationDestinationManager::_migrateDriver(OperationContext* opCtx,
     invariant(!max.isEmpty());
 
     log() << "Starting receiving end of migration of chunk " << redact(min) << " -> " << redact(max)
-          << " for collection " << _nss.ns() << " from " << fromShardConnString
-          << " with session id " << *_sessionId;
+          << " for collection " << _nss.ns() << " from " << fromShardConnString << " at epoch "
+          << epoch.toString() << " with session id " << *_sessionId;
 
     MoveTimingHelper timing(
         opCtx, "to", _nss.ns(), min, max, 6 /* steps */, &_errmsg, ShardId(), ShardId());
@@ -597,7 +601,7 @@ void MigrationDestinationManager::_migrateDriver(OperationContext* opCtx,
         // being moved, and wait for completion
 
         auto footprint = ChunkRange(min, max);
-        Status status = _notePending(opCtx, _nss, footprint);
+        Status status = _notePending(opCtx, _nss, footprint, epoch);
         if (!status.isOK()) {
             setStateFail(status.reason());
             return;
@@ -962,34 +966,52 @@ bool MigrationDestinationManager::_flushPendingWrites(OperationContext* opCtx,
 
 Status MigrationDestinationManager::_notePending(OperationContext* opCtx,
                                                  NamespaceString const& nss,
+                                                 OID const& epoch,
                                                  ChunkRange const& range) {
     AutoGetCollection autoColl(opCtx, nss, MODE_IX, MODE_X);
     if (autoColl.getCollection() == nullptr) {
         return Status::OK();
     }
+
     auto css = CollectionShardingState::get(opCtx, nss);
+    auto metadata = css->getMetadata();
+
+    // This can currently happen because drops aren't synchronized with in-migrations.  The idea
+    // for checking this here is that in the future we shouldn't have this problem.
+    if (!metadata || metadata->getCollVersion().epoch() != epoch) {
+        return {ErrorCodes::StaleShardVersion,
+                str::stream() << "not noting chunk [" << min << "," << max << ")"
+                              << " as pending because the epoch for " << nss.ns() << " changed"};
 
     // start clearing any leftovers that would be in the new chunk
-    if (!css->beginReceive(range)) {
+    if (!css->beginReceive(epoch, range)) {
         return {ErrorCodes::RangeOverlapConflict,
-                str::stream() << "Collection " << nss.ns() << " range " << range.toString()
-                              << " migration aborted; documents in range may still"
-                                 "  be in use on the destination shard."};
+                str::stream() << "Collection " << nss.ns() << " range " << redact(range.toString())
+                              << " migration aborted; documents in range may still be in use on the"
+                                 " destination shard."};
     }
     return Status::OK();
 }
 
 void MigrationDestinationManager::_forgetPending(OperationContext* opCtx,
                                                  const NamespaceString& nss,
+                                                 OID const& epoch,
                                                  ChunkRange const& range) {
 
-    if (!_chunkMarkedPending) {  // no lock needed, only the migrate thread looks.
-        return;
+    if (!_chunkMarkedPending) {  // (no lock needed, only the migrate thread looks at this.)
+        return;  // no documents can have been moved in, so there is nothing to clean up.
     }
     {
         AutoGetCollection autoColl(opCtx, nss, MODE_IX, MODE_X);
         if (autoColl.getCollection() == nullptr) {
             return;
+        }
+        // This can currently happen because drops aren't synchronized with in-migrations. The idea
+        // for checking this here is that in the future we shouldn't have this problem.
+        if (!metadata || metadata->getCollVersion().epoch() != epoch) {
+           log() << "no need to forget pending chunk " << "[" << min << "," << max << ")"
+                 << " because the epoch for " << nss.ns() << " changed";
+           return;
         }
         auto css = CollectionShardingState::get(opCtx, nss);
         auto metadata = css->getMetadata();
