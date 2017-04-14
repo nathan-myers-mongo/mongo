@@ -135,20 +135,19 @@ load('./jstests/libs/cleanup_orphaned_util.js');
     unpauseMigrateAtStep(recipient, migrateStepNames.done);
     waitForMoveChunkStep(donor, moveChunkStepNames.committed);
 
-    // Donor is paused after the migration chunk commit and scheduling the range deleter, but before
-    // that is allowed to run. Thus it technically has orphaned data -- commit is complete, but
-    // moved data is still present. cleanupOrphaned cannot remove the data the donor has scheduled
-    // to clean up because the moveChunk command itself, which started while the orphan range was
-    // live, blocks its cleanup.  So, unstop it first.  The moveChunk range will be cleaned first,
-    // then cleanupOrphans will clean two now-empty ranges.
-
-    unpauseMoveChunkAtStep(donor, moveChunkStepNames.committed);
+    // Donor is paused after the migration chunk commit, but before it finishes the cleanup that
+    // includes running the range deleter. Thus it technically has orphaned data -- commit is
+    // complete, but moved data is still present. cleanupOrphaned can remove the data the donor
+    // would otherwise clean up itself in its post-move delete phase.
     cleanupOrphaned(donor, ns, 2);
     assert.eq(10, donorColl.count());
 
     // Let the donor migration finish.
+    unpauseMoveChunkAtStep(donor, moveChunkStepNames.committed);
     joinMoveChunk();
 
+    // Donor has finished post-move delete, which had nothing to remove with the range deleter
+    // because of the preemptive cleanupOrphaned call.
     assert.eq(10, donorColl.count());
     assert.eq(21, recipientColl.count());
     assert.eq(31, coll.count());
