@@ -141,14 +141,12 @@ TEST_F(CollectionRangeDeleterTest, NoDataInGivenRangeToClean) {
     const BSONObj insertedDoc = BSON(kPattern << 25);
     DBDirectClient dbclient(operationContext());
     dbclient.insert(kNss.toString(), insertedDoc);
-    ASSERT_BSONOBJ_EQ(insertedDoc,
-                      dbclient.findOne(kNss.toString(), QUERY(kPattern << 25)));
+    ASSERT_BSONOBJ_EQ(insertedDoc, dbclient.findOne(kNss.toString(), QUERY(kPattern << 25)));
 
     rangeDeleter.add(ChunkRange(BSON(kPattern << 0), BSON(kPattern << 10)));
     ASSERT_TRUE(next(rangeDeleter, 1));
 
-    ASSERT_BSONOBJ_EQ(insertedDoc,
-                      dbclient.findOne(kNss.toString(), QUERY(kPattern << 25)));
+    ASSERT_BSONOBJ_EQ(insertedDoc, dbclient.findOne(kNss.toString(), QUERY(kPattern << 25)));
 
     ASSERT_FALSE(next(rangeDeleter, 1));
 }
@@ -159,8 +157,7 @@ TEST_F(CollectionRangeDeleterTest, OneDocumentInOneRangeToClean) {
     const BSONObj insertedDoc = BSON(kPattern << 5);
     DBDirectClient dbclient(operationContext());
     dbclient.insert(kNss.toString(), BSON(kPattern << 5));
-    ASSERT_BSONOBJ_EQ(insertedDoc,
-                dbclient.findOne(kNss.toString(), QUERY(kPattern << 5)));
+    ASSERT_BSONOBJ_EQ(insertedDoc, dbclient.findOne(kNss.toString(), QUERY(kPattern << 5)));
 
     rangeDeleter.add(ChunkRange(BSON(kPattern << 0), BSON(kPattern << 10)));
 
@@ -233,9 +230,9 @@ TEST_F(CollectionRangeDeleterTest, MultipleDocumentsInMultipleRangesToClean) {
     ASSERT_EQUALS(0ULL, dbclient.count(kNss.toString(), BSON(kPattern << LT << 4)));
     ASSERT_EQUALS(3ULL, dbclient.count(kNss.toString(), BSON(kPattern << LT << 10)));
 
-    ASSERT_TRUE(next(rangeDeleter, 100)); // discover there are no more < 4, pop range 1
-    ASSERT_TRUE(next(rangeDeleter, 100)); // delete the remaining documents
-    ASSERT_TRUE(next(rangeDeleter, 1));   // discover there are no more, pop range 2
+    ASSERT_TRUE(next(rangeDeleter, 100));  // discover there are no more < 4, pop range 1
+    ASSERT_TRUE(next(rangeDeleter, 100));  // delete the remaining documents
+    ASSERT_TRUE(next(rangeDeleter, 1));    // discover there are no more, pop range 2
     ASSERT_EQUALS(0ULL, dbclient.count(kNss.toString(), BSON(kPattern << LT << 10)));
     ASSERT_FALSE(next(rangeDeleter, 1));  // discover there are no more ranges
 }

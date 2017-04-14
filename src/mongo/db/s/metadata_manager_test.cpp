@@ -222,10 +222,10 @@ TEST_F(MetadataManagerTest, NotificationBlocksUntilDeletion) {
         ASSERT_EQ(manager.numberOfRangesToClean(), 1UL);
 
         notif = manager.trackOrphanedDataCleanup(cr1);  // will wake when scm goes away
-    }                                       // scm destroyed, refcount of tracker goes to zero
+    }  // scm destroyed, refcount of tracker goes to zero
     ASSERT_EQ(manager.numberOfMetadataSnapshots(), 0UL);
     ASSERT_EQ(manager.numberOfRangesToClean(), 1UL);
-    ASSERT(bool(notif));                // woke
+    ASSERT(bool(notif));                            // woke
     notif = manager.trackOrphanedDataCleanup(cr1);  // now tracking the range in _rangesToClean
     ASSERT(notif.get() != nullptr);
 }

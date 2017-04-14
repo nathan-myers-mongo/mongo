@@ -981,7 +981,9 @@ Status MigrationDestinationManager::_notePending(OperationContext* opCtx,
     if (!metadata || metadata->getCollVersion().epoch() != epoch) {
         return {ErrorCodes::StaleShardVersion,
                 str::stream() << "not noting chunk " << redact(range.toString())
-                               << " as pending because the epoch of " << nss.ns() << " changed"};
+                              << " as pending because the epoch of "
+                              << nss.ns()
+                              << " changed"};
     }
 
     // start clearing any leftovers that would be in the new chunk
@@ -1012,9 +1014,9 @@ void MigrationDestinationManager::_forgetPending(OperationContext* opCtx,
         // This can currently happen because drops aren't synchronized with in-migrations. The idea
         // for checking this here is that in the future we shouldn't have this problem.
         if (!metadata || metadata->getCollVersion().epoch() != epoch) {
-           log() << "no need to forget pending chunk " << redact(range.toString())
-                 << " because the epoch for " << nss.ns() << " changed";
-           return;
+            log() << "no need to forget pending chunk " << redact(range.toString())
+                  << " because the epoch for " << nss.ns() << " changed";
+            return;
         }
         css->forgetReceive(range);
     }
