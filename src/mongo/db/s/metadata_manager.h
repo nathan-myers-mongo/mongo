@@ -108,14 +108,9 @@ public:
      * Fails if the range overlaps any current local shard chunk.
      *
      * Must be called with the collection locked for writing.  To monitor completion, use
-     * trackCleanup or CollectionShardingState::waitForClean.
+     * trackOrphanedDataCleanup or CollectionShardingState::waitForClean.
      */
     Status cleanUpRange(ChunkRange const& range);
-
-    /**
-     * Returns true if the specified key is in a range being received.
-     */
-    bool keyIsPending(const BSONObj& key) const;
 
     /**
      * Returns the number of ranges scheduled to be cleaned, exclusive of such ranges that might
@@ -137,7 +132,7 @@ public:
      * Otherwise, returns a notification n such that n->get(opCtx) will wake when deletion of a
      * range (possibly the one of interest) is completed.
      */
-    CleanupNotification trackCleanup(ChunkRange const& orphans);
+    CleanupNotification trackOrphanedDataCleanup(ChunkRange const& orphans);
 
     boost::optional<KeyRange> getNextOrphanRange(BSONObj const& from);
 

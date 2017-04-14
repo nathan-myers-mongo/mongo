@@ -195,10 +195,11 @@ Status CollectionShardingState::waitForClean(OperationContext* opCtx,
             if (!css->getMetadata()) {
                 return {ErrorCodes::StaleShardVersion, "Collection being migrated was dropped"};
             }
-            stillScheduled = css->_metadataManager.trackCleanup(orphanRange);
+            stillScheduled = css->_metadataManager.trackOrphanedDataCleanup(orphanRange);
             if (stillScheduled == nullptr) {
-                log() << "Finished deleting " << nss.ns() << " range " << orphanRange;
-                return Status::OK();  // done!
+                log() << "Finished deleting " << nss.ns() << " range "
+                      << redact(orphanRange.toString());
+                return Status::OK();
             }
         }  // drop collection lock
 
@@ -206,11 +207,9 @@ Status CollectionShardingState::waitForClean(OperationContext* opCtx,
         Status result = stillScheduled->get(opCtx);
         if (!result.isOK()) {
             return {result.code(),
-                    str::stream() << "Failed to delete orphaned collection " << nss.ns()
-                                  << " range "
-                                  << orphanRange.toString()
-                                  << ": "
-                                  << result.reason()};
+                    str::stream() << "Failed to delete orphaned " << nss.ns() << " range "
+                                  << redact(orphanRange.toString()) << ": "
+                                  << redact(result.reason())};
         }
     } while (true);
     MONGO_UNREACHABLE;

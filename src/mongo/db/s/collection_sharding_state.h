@@ -92,13 +92,6 @@ public:
     ScopedCollectionMetadata getMetadata();
 
     /**
-     * Returns true if the specified key is in a range being received.
-     */
-    bool keyIsPending(const BSONObj& key) const {
-        return _metadataManager.keyIsPending(key);
-    }
-
-    /**
      * BSON output of the pending metadata into a BSONArray
      */
     void toBSONPending(BSONArrayBuilder& bb) const {
@@ -190,7 +183,7 @@ public:
      * again after each wakeup until it returns nullptr, because there can be more than one range
      * scheduled for deletion that overlaps its argument.
      */
-    CleanupNotification trackCleanup(ChunkRange const& range) const;
+    CleanupNotification trackOrphanedDataCleanup(ChunkRange const& range) const;
 
     /**
      * Returns a range _not_ owned by this shard that starts no lower than the specified

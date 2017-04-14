@@ -99,6 +99,7 @@ public:
      */
     ChunkRange unionWith(ChunkRange const& other) const;
 
+private:
     const BSONObj _minKey;
     const BSONObj _maxKey;
 };

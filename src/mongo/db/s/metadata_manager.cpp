@@ -60,10 +60,10 @@ MetadataManager::MetadataManager(ServiceContext* sc, NamespaceString nss, TaskEx
 
 MetadataManager::~MetadataManager() {
     stdx::lock_guard<stdx::mutex> scopedLock(_managerLock);
-    // wake everybody up to see us die
-    if (!*_notification) {
+    if (!*_notification) {  // must check because test driver triggers it
         _notification->set(Status{ErrorCodes::InterruptedDueToReplStateChange,
-                                  "Collection sharding metadata destroyed"});
+                                  "tracking orphaned range deletion abandoned because the"
+                                  " collection was dropped or became unsharded"});
     }
 }
 
@@ -188,6 +188,7 @@ void MetadataManager::_retireExpiredMetadata() {
 
 // this is called only from ScopedCollectionMetadata members, unlocked.
 void MetadataManager::_decrementTrackerUsage(ScopedCollectionMetadata const& scoped) {
+
     if (scoped._tracker != nullptr) {
         stdx::lock_guard<stdx::mutex> lock(_managerLock);
 
@@ -338,7 +339,7 @@ void MetadataManager::_removeFromReceiving(ChunkRange const& range) {
     _receivingChunks.erase(it);
 }
 
-void MetadataManager::forgetReceive(const ChunkRange& range) {
+void MetadataManager::forgetReceive(ChunkRange const& range) {
     stdx::lock_guard<stdx::mutex> scopedLock(_managerLock);
     // This is potentially a partially received chunk, which needs to be cleaned up. We know none
     // of these documents are in use, so they can go straight to the deletion queue.
@@ -357,7 +358,11 @@ Status MetadataManager::cleanUpRange(ChunkRange const& range) {
 
     if (metadata->rangeOverlapsChunk(range)) {
         return {ErrorCodes::RangeOverlapConflict,
-                str::stream() << "Requested deletion range overlaps live shard chunk"};
+                str::stream() << "Requested deletion range overlaps a live shard chunk"};
+    }
+    if (rangeMapOverlaps(_receivingChunks, range.getMin(), range.getMax())) {
+        return {ErrorCodes::RangeOverlapConflict,
+                str::stream() << "Requested deletion range overlaps a chunk being migrated in"};
     }
     if (!_overlapsInUseChunk(range)) {
         // No running queries can depend on it, so queue it for deletion immediately.
@@ -377,17 +382,6 @@ Status MetadataManager::cleanUpRange(ChunkRange const& range) {
     return Status::OK();
 }
 
-bool MetadataManager::keyIsPending(const BSONObj& key) const {
-    if (_receivingChunks.empty()) {
-        return false;
-    }
-    auto it = _receivingChunks.upper_bound(key);
-    if (it != _receivingChunks.begin())
-        it--;
-    return rangeContains(it->first, it->second.getMaxKey(), key);
-}
-
-
 size_t MetadataManager::numberOfRangesToCleanStillInUse() {
     stdx::lock_guard<stdx::mutex> scopedLock(_managerLock);
     size_t count = _activeMetadataTracker->orphans ? 1 : 0;
@@ -402,7 +396,9 @@ size_t MetadataManager::numberOfRangesToClean() {
     return _rangesToClean.size();
 }
 
-MetadataManager::CleanupNotification MetadataManager::trackCleanup(ChunkRange const& range) {
+MetadataManager::CleanupNotification MetadataManager::trackOrphanedDataCleanup(
+    ChunkRange const& range) {
+
     stdx::unique_lock<stdx::mutex> scopedLock(_managerLock);
     if (_overlapsInUseCleanups(range))
         return _notification;

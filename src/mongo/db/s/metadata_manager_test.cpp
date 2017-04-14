@@ -124,7 +124,6 @@ protected:
         const BSONObj& minKey,
         const BSONObj& maxKey,
         const ChunkVersion& chunkVersion) {
-        invariant(chunkVersion.epoch() == metadata.getShardVersion().epoch());
         invariant(chunkVersion.isSet());
         invariant(chunkVersion > metadata.getCollVersion());
         invariant(minKey.woCompare(maxKey) < 0);
@@ -194,7 +193,7 @@ TEST_F(MetadataManagerTest, AddRangeNotificationsBlockAndYield) {
     ChunkRange cr1(BSON("key" << 0), BSON("key" << 10));
     ASSERT_OK(manager.cleanUpRange(cr1));
     ASSERT_EQ(manager.numberOfRangesToClean(), 1UL);
-    auto notification = manager.trackCleanup(cr1);
+    auto notification = manager.trackOrphanedDataCleanup(cr1);
     ASSERT(notification != nullptr && !bool(*notification));
     notification->set(Status::OK());
     ASSERT(bool(*notification));
@@ -205,7 +204,7 @@ TEST_F(MetadataManagerTest, NotificationBlocksUntilDeletion) {
     ChunkRange cr1(BSON("key" << 20), BSON("key" << 30));
     MetadataManager manager(getServiceContext(), kNss, executor());
     manager.refreshActiveMetadata(makeEmptyMetadata());
-    auto notif = manager.trackCleanup(cr1);
+    auto notif = manager.trackOrphanedDataCleanup(cr1);
     ASSERT(notif.get() == nullptr);
     {
         ASSERT_EQ(manager.numberOfMetadataSnapshots(), 0UL);
@@ -222,12 +221,12 @@ TEST_F(MetadataManagerTest, NotificationBlocksUntilDeletion) {
         ASSERT_EQ(manager.numberOfMetadataSnapshots(), 1UL);
         ASSERT_EQ(manager.numberOfRangesToClean(), 1UL);
 
-        notif = manager.trackCleanup(cr1);  // will wake when scm goes away
+        notif = manager.trackOrphanedDataCleanup(cr1);  // will wake when scm goes away
     }                                       // scm destroyed, refcount of tracker goes to zero
     ASSERT_EQ(manager.numberOfMetadataSnapshots(), 0UL);
     ASSERT_EQ(manager.numberOfRangesToClean(), 1UL);
     ASSERT(bool(notif));                // woke
-    notif = manager.trackCleanup(cr1);  // now tracking the range in _rangesToClean
+    notif = manager.trackOrphanedDataCleanup(cr1);  // now tracking the range in _rangesToClean
     ASSERT(notif.get() != nullptr);
 }
 

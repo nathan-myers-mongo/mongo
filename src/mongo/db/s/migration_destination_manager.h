@@ -129,7 +129,7 @@ private:
                         BSONObj max,
                         BSONObj shardKeyPattern,
                         ConnectionString fromShardConnString,
-                        const OID& epoch,
+                        OID epoch,
                         WriteConcernOptions writeConcern);
 
     void _migrateDriver(OperationContext* opCtx,
@@ -161,13 +161,13 @@ private:
      * it schedules deletion of any documents in the range, so that process must be seen to be
      * complete before migrating any new documents in.
      */
-    Status _notePending(OperationContext*, NamespaceString const&, ChunkRange const&);
+    Status _notePending(OperationContext*, NamespaceString const&, OID const&, ChunkRange const&);
 
     /**
      * Stops tracking a chunk range between 'min' and 'max' that previously was having data
      * migrated into it, and schedules deletion of any such documents already migrated in.
      */
-    void _forgetPending(OperationContext*, NamespaceString const&, ChunkRange const&);
+    void _forgetPending(OperationContext*, NamespaceString const&, OID const&, ChunkRange const&);
 
     /**
      * Checks whether the MigrationDestinationManager is currently handling a migration by checking

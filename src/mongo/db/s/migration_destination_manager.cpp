@@ -429,7 +429,7 @@ void MigrationDestinationManager::_migrateThread(BSONObj min,
     }
 
     if (getState() != DONE) {
-        _forgetPending(opCtx.get(), _nss, ChunkRange(min, max));
+        _forgetPending(opCtx.get(), _nss, epoch, ChunkRange(min, max));
     }
 
     stdx::lock_guard<stdx::mutex> lk(_mutex);
@@ -443,7 +443,7 @@ void MigrationDestinationManager::_migrateDriver(OperationContext* opCtx,
                                                  const BSONObj& max,
                                                  const BSONObj& shardKeyPattern,
                                                  const ConnectionString& fromShardConnString,
-                                                 const OID&,
+                                                 const OID& epoch,
                                                  const WriteConcernOptions& writeConcern) {
     invariant(isActive());
     invariant(_sessionId);
@@ -601,7 +601,7 @@ void MigrationDestinationManager::_migrateDriver(OperationContext* opCtx,
         // being moved, and wait for completion
 
         auto footprint = ChunkRange(min, max);
-        Status status = _notePending(opCtx, _nss, footprint, epoch);
+        Status status = _notePending(opCtx, _nss, epoch, footprint);
         if (!status.isOK()) {
             setStateFail(status.reason());
             return;
@@ -980,11 +980,12 @@ Status MigrationDestinationManager::_notePending(OperationContext* opCtx,
     // for checking this here is that in the future we shouldn't have this problem.
     if (!metadata || metadata->getCollVersion().epoch() != epoch) {
         return {ErrorCodes::StaleShardVersion,
-                str::stream() << "not noting chunk [" << min << "," << max << ")"
-                              << " as pending because the epoch for " << nss.ns() << " changed"};
+                str::stream() << "not noting chunk " << redact(range.toString())
+                               << " as pending because the epoch of " << nss.ns() << " changed"};
+    }
 
     // start clearing any leftovers that would be in the new chunk
-    if (!css->beginReceive(epoch, range)) {
+    if (!css->beginReceive(range)) {
         return {ErrorCodes::RangeOverlapConflict,
                 str::stream() << "Collection " << nss.ns() << " range " << redact(range.toString())
                               << " migration aborted; documents in range may still be in use on the"
@@ -1006,15 +1007,15 @@ void MigrationDestinationManager::_forgetPending(OperationContext* opCtx,
         if (autoColl.getCollection() == nullptr) {
             return;
         }
+        auto css = CollectionShardingState::get(opCtx, nss);
+        auto metadata = css->getMetadata();
         // This can currently happen because drops aren't synchronized with in-migrations. The idea
         // for checking this here is that in the future we shouldn't have this problem.
         if (!metadata || metadata->getCollVersion().epoch() != epoch) {
-           log() << "no need to forget pending chunk " << "[" << min << "," << max << ")"
+           log() << "no need to forget pending chunk " << redact(range.toString())
                  << " because the epoch for " << nss.ns() << " changed";
            return;
         }
-        auto css = CollectionShardingState::get(opCtx, nss);
-        auto metadata = css->getMetadata();
         css->forgetReceive(range);
     }
 }

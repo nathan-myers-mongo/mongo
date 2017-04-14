@@ -93,6 +93,14 @@ bool CollectionRangeDeleter::cleanUpNextRange(OperationContext* opCtx,
             return false;  // collection was dropped
         }
         auto* css = CollectionShardingState::get(opCtx, nss);
+        auto scopedCollectionMetadata = css->getMetadata();
+        if (!scopedCollectionMetadata) {
+            return false;  // collection was unsharded
+        }
+        // We don't actually know if this is the same collection that we were originally scheduled
+        // to do deletions on, or another one with the same name.  But it doesn't matter: if it has
+        // deletions scheduled, now is as good a time as any to do them.
+
         CollectionRangeDeleter* self = test ? test : &css->_metadataManager._rangesToClean;
         {
             stdx::lock_guard<stdx::mutex> scopedLock(css->_metadataManager._managerLock);
@@ -103,7 +111,6 @@ bool CollectionRangeDeleter::cleanUpNextRange(OperationContext* opCtx,
         }
 
         try {
-            auto scopedCollectionMetadata = css->getMetadata();
             auto keyPattern = scopedCollectionMetadata->getKeyPattern();
 
             wrote = self->_doDeletion(opCtx, collection, keyPattern, *range, maxToDelete);

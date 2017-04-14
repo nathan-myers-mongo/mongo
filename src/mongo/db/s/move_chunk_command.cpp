@@ -224,15 +224,16 @@ private:
             MONGO_FAIL_POINT_PAUSE_WHILE_SET(moveChunkHangAtStep5);
 
             uassertStatusOKWithWarning(migrationSourceManager.commitChunkMetadataOnConfig(opCtx));
-            moveTimingHelper.done(6);
-            MONGO_FAIL_POINT_PAUSE_WHILE_SET(moveChunkHangAtStep6);
         }
+        moveTimingHelper.done(6);
+        MONGO_FAIL_POINT_PAUSE_WHILE_SET(moveChunkHangAtStep6);
+
         auto range = ChunkRange(moveChunkRequest.getMinKey(), moveChunkRequest.getMaxKey());
         if (moveChunkRequest.getWaitForDelete()) {
             CollectionShardingState::waitForClean(opCtx, moveChunkRequest.getNss(), range);
         } else {
-            log() << "Leaving cleanup of " << moveChunkRequest.getNss().ns() << " range " << range
-                  << " to complete in background";
+            log() << "Leaving cleanup of " << moveChunkRequest.getNss().ns() << " range "
+                  << redact(range.toString()) << " to complete in background";
         }
         moveTimingHelper.done(7);
         MONGO_FAIL_POINT_PAUSE_WHILE_SET(moveChunkHangAtStep7);

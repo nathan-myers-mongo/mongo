@@ -67,8 +67,8 @@ public:
      * range is no longer scheduled.  Its value indicates whether it has been successfully removed.
      * If there is no overlap, the result is nullptr.  After a successful removal, the caller
      * should call again to ensure no other range overlaps the argument.
-     * (See CollectionShardingState::waitForClean and MetadataManager::trackCleanup for an
-     * example use.)
+     * (See CollectionShardingState::waitForClean and MetadataManager::trackOrphanedDataCleanup for
+     * an example use.)
      */
     DeleteNotification overlaps(ChunkRange const& range) const;
 
