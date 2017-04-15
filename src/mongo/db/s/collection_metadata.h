@@ -167,7 +167,7 @@ public:
 
 private:
     /**
-     * Clears and rebuilds _rangesMap from the contents of _chunksMap.
+     * Builds _rangesMap from the contents of _chunksMap.
      */
 
     void _buildRangesMap();
