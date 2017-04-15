@@ -59,8 +59,7 @@ class RemoveRange {
 public:
     RemoveRange() : _min(4), _max(8) {}
 
-    void run() {
-    }
+    void run() {}
 
 private:
     BSONArray expected() const {
