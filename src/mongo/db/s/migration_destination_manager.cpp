@@ -609,7 +609,7 @@ void MigrationDestinationManager::_migrateDriver(OperationContext* opCtx,
 
         _chunkMarkedPending = true;  // no lock needed, only the migrate thread looks.
 
-        status = CollectionShardingState::waitForClean(opCtx, _nss, footprint);
+        status = CollectionShardingState::waitForClean(opCtx, _nss, epoch, footprint);
         if (!status.isOK()) {
             setStateFail(status.reason());
             return;

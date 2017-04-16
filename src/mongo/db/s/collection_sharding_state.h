@@ -87,7 +87,9 @@ public:
     static CollectionShardingState* get(OperationContext* opCtx, const std::string& ns);
 
     /**
-     * Returns the chunk metadata for the collection.
+     * Returns the chunk metadata for the collection. The metadata it represents lives as long as
+     * the object itself, and the collection, exist. After dropping the collection lock, the
+     * collection may no longer exist, but it is still safe to destroy the object.
      */
     ScopedCollectionMetadata getMetadata();
 
@@ -173,7 +175,7 @@ public:
      * Tracks deletion of any documents within the range, returning when deletion is complete.
      * Throws if the collection is dropped while it sleeps. Call this with the collection unlocked.
      */
-    static Status waitForClean(OperationContext*, NamespaceString, ChunkRange);
+    static Status waitForClean(OperationContext*, NamespaceString, OID const& epoch, ChunkRange);
 
     using CleanupNotification = MetadataManager::CleanupNotification;
     /**

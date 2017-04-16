@@ -93,38 +93,40 @@ bool CollectionRangeDeleter::cleanUpNextRange(OperationContext* opCtx,
             return false;  // collection was dropped
         }
         auto* css = CollectionShardingState::get(opCtx, nss);
-        auto scopedCollectionMetadata = css->getMetadata();
-        if (!scopedCollectionMetadata) {
-            return false;  // collection was unsharded
-        }
-        // We don't actually know if this is the same collection that we were originally scheduled
-        // to do deletions on, or another one with the same name.  But it doesn't matter: if it has
-        // deletions scheduled, now is as good a time as any to do them.
-
-        CollectionRangeDeleter* self = test ? test : &css->_metadataManager._rangesToClean;
         {
-            stdx::lock_guard<stdx::mutex> scopedLock(css->_metadataManager._managerLock);
-            if (self->isEmpty())
-                return false;  // done
-            auto& frontRange = self->_orphans.front().range;
-            range.emplace(frontRange.getMin().getOwned(), frontRange.getMax().getOwned());
-        }
+            auto scopedCollectionMetadata = css->getMetadata();
+            if (!scopedCollectionMetadata) {
+                return false;  // collection was unsharded
+            }
+            // We don't actually know if this is the same collection that we were originally
+            // scheduled to do deletions on, or another one with the same name.  But it doesn't
+            // matter: if it has deletions scheduled, now is as good a time as any to do them.
 
-        try {
-            auto keyPattern = scopedCollectionMetadata->getKeyPattern();
+            CollectionRangeDeleter* self = test ? test : &css->_metadataManager._rangesToClean;
+            {
+                stdx::lock_guard<stdx::mutex> scopedLock(css->_metadataManager._managerLock);
+                if (self->isEmpty())
+                    return false;
+                auto& frontRange = self->_orphans.front().range;
+                range.emplace(frontRange.getMin().getOwned(), frontRange.getMax().getOwned());
+            }
 
-            wrote = self->_doDeletion(opCtx, collection, keyPattern, *range, maxToDelete);
+            try {
+                auto keyPattern = scopedCollectionMetadata->getKeyPattern();
 
-        } catch (DBException& e) {
-            wrote = e.toStatus();
-            warning() << e.what();
-        }
-        if (!wrote.isOK() || wrote.getValue() == 0) {
-            stdx::lock_guard<stdx::mutex> scopedLock(css->_metadataManager._managerLock);
-            self->_pop(wrote.getStatus());
-            return true;
-        }
-    }
+                wrote = self->_doDeletion(opCtx, collection, keyPattern, *range, maxToDelete);
+
+            } catch (DBException& e) {
+                wrote = e.toStatus();
+                warning() << e.what();
+            }
+            if (!wrote.isOK() || wrote.getValue() == 0) {
+                stdx::lock_guard<stdx::mutex> scopedLock(css->_metadataManager._managerLock);
+                self->_pop(wrote.getStatus());
+                return true;
+            }
+        }  // drop scopedCollectionMetadata
+    }      // drop autoColl
     invariant(range);
     invariant(wrote.isOK() && wrote.getValue() > 0);
     log() << "Deleted " << wrote.getValue() << " documents in " << nss.ns() << " range " << *range;

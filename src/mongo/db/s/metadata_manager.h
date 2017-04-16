@@ -137,28 +137,13 @@ public:
     boost::optional<KeyRange> getNextOrphanRange(BSONObj const& from);
 
 private:
-    struct CollectionMetadataTracker {
-        /**
-         * Creates a new CollectionMetadataTracker with the usageCounter initialized to zero.
-         */
-        CollectionMetadataTracker(std::unique_ptr<CollectionMetadata> m);
-
-        std::unique_ptr<CollectionMetadata> metadata;
-        uint32_t usageCounter{0};
-        boost::optional<ChunkRange> orphans{boost::none};
-    };
+    struct Tracker;
 
     /**
      * Retires any metadata that has fallen out of use, and pushes any orphan ranges found in them
      * to the list of ranges actively being cleaned up.
      */
     void _retireExpiredMetadata();
-
-    /**
-     * Atomically decrements scoped.tracker->usageCount under our own mutex. At zero, retires any
-     * metadata that has fallen out of use. Calling with a null scoped.tracker is a no-op.
-     */
-    void _decrementTrackerUsage(ScopedCollectionMetadata const& scoped);
 
     /**
      * Pushes current set of chunks, if any, to _metadataInUse, replaces it with newMetadata.
@@ -222,20 +207,21 @@ private:
     const NamespaceString _nss;
 
     // ServiceContext from which to obtain instances of global support objects.
-    ServiceContext* _serviceContext;
+    ServiceContext* const _serviceContext;
 
     // Mutex to protect the state below
     stdx::mutex _managerLock;
 
-    // The currently active collection metadata
-    std::unique_ptr<CollectionMetadataTracker> _activeMetadataTracker;
+    bool _shuttingDown{false};
+
+    // The collection metadata reflecting chunks accessible to new queries
+    std::shared_ptr<Tracker> _activeMetadataTracker;
 
     // Previously active collection metadata instances still in use by active server operations or
     // cursors
-    std::list<std::unique_ptr<CollectionMetadataTracker>> _metadataInUse;
+    std::list<std::shared_ptr<Tracker>> _metadataInUse;
 
-    // Chunk ranges which are currently assumed to be transferred to the shard. Indexed by the min
-    // key of the range.
+    // Chunk ranges being migrated into to the shard. Indexed by the min key of the range.
     RangeMap _receivingChunks;
 
     // Clients can sleep on copies of _notification while waiting for their orphan ranges to fall
@@ -243,12 +229,14 @@ private:
     std::shared_ptr<Notification<Status>> _notification;
 
     // The background task that deletes documents from orphaned chunk ranges.
-    executor::TaskExecutor* _executor;
+    executor::TaskExecutor* const _executor;
 
     // Ranges being deleted, or scheduled to be deleted, by a background task
     CollectionRangeDeleter _rangesToClean;
 
-    // for access to _decrementTrackerUsage()
+    // friends
+
+    // for access to _decrementTrackerUsage(), and to Tracker.
     friend class ScopedCollectionMetadata;
 
     // for access to _rangesToClean and _managerLock under task callback
@@ -266,40 +254,53 @@ public:
      * Creates an empty ScopedCollectionMetadata. Using the default constructor means that no
      * metadata is available.
      */
-    ScopedCollectionMetadata();
+    ScopedCollectionMetadata() = default;
 
-    // Must be called with owning MetadataManager unlocked
+    /**
+     * May be called outside any Collection lock.
+     */
     ~ScopedCollectionMetadata();
 
-    // must be called with owning MetadataManager unlocked
+    /**
+     * Binds *this to the same tracker as other, if any.
+     *
+     * If other is non-null, must be called under a Collection lock.
+     */
     ScopedCollectionMetadata(ScopedCollectionMetadata&& other);
     ScopedCollectionMetadata& operator=(ScopedCollectionMetadata&& other);
 
     /**
-     * Dereferencing the ScopedCollectionMetadata dereferences the internal CollectionMetadata.
+     * Dereferencing the ScopedCollectionMetadata dereferences the private CollectionMetadata.
+     *
+     * Must be called, and the result used, under a Collection lock.
      */
     CollectionMetadata* operator->() const;
     CollectionMetadata* getMetadata() const;
 
     /**
-     * True if the ScopedCollectionMetadata stores a metadata (is not empty)
+     * True if the ScopedCollectionMetadata stores a metadata (is not empty) and the collection is
+     * sharded.
+     *
+     * Must be called under a Collection lock.
      */
     operator bool() const;
 
 private:
     /**
-     * Increments the refcount in the specified tracker.
+     * If tracker is non-null, increments the refcount in the specified tracker.
      *
-     * Must be called with specified *manager locked.
+     * Must be called with tracker->manager locked.
      */
-    ScopedCollectionMetadata(MetadataManager* manager,
-                             MetadataManager::CollectionMetadataTracker* tracker);
+    ScopedCollectionMetadata(std::shared_ptr<MetadataManager::Tracker> tracker);
 
-    MetadataManager* _manager{nullptr};
-    MetadataManager::CollectionMetadataTracker* _tracker{nullptr};
+    /**
+     * Disconnect from the tracker, possibly triggering GC of unused CollectionMetadata.
+     */
+    void _clear();
+
+    std::shared_ptr<MetadataManager::Tracker> _tracker{nullptr};
 
     friend ScopedCollectionMetadata MetadataManager::getActiveMetadata();  // uses our private ctor
-    friend void MetadataManager::_decrementTrackerUsage(ScopedCollectionMetadata const&);
 };
 
 }  // namespace mongo

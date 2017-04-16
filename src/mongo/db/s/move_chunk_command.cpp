@@ -230,7 +230,8 @@ private:
 
         auto range = ChunkRange(moveChunkRequest.getMinKey(), moveChunkRequest.getMaxKey());
         if (moveChunkRequest.getWaitForDelete()) {
-            CollectionShardingState::waitForClean(opCtx, moveChunkRequest.getNss(), range);
+            CollectionShardingState::waitForClean(
+                opCtx, moveChunkRequest.getNss(), moveChunkRequest.getVersionEpoch(), range);
         } else {
             log() << "Leaving cleanup of " << moveChunkRequest.getNss().ns() << " range "
                   << redact(range.toString()) << " to complete in background";

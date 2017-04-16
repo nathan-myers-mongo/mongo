@@ -83,17 +83,17 @@ CleanupResult cleanupOrphanedData(OperationContext* opCtx,
 
     BSONObj startingFromKey = startingFromKeyConst;
     boost::optional<ChunkRange> targetRange;
+    OID epoch;
     {
         AutoGetCollection autoColl(opCtx, ns, MODE_IX);
         auto css = CollectionShardingState::get(opCtx, ns.toString());
         auto metadata = css->getMetadata();
-
         if (!metadata) {
             log() << "skipping orphaned data cleanup for " << ns.toString()
                   << ", collection is not sharded";
-
             return CleanupResult_Done;
         }
+        epoch = metadata->getCollVersion().epoch();
 
         BSONObj keyPattern = metadata->getKeyPattern();
         if (!startingFromKey.isEmpty()) {
@@ -128,7 +128,7 @@ CleanupResult cleanupOrphanedData(OperationContext* opCtx,
         uassertStatusOK(css->cleanUpRange(*targetRange));
     }
     if (targetRange) {
-        auto result = CollectionShardingState::waitForClean(opCtx, ns, *targetRange);
+        auto result = CollectionShardingState::waitForClean(opCtx, ns, epoch, *targetRange);
         if (!result.isOK()) {
             warning() << redact(result.reason());
             return CleanupResult_Error;

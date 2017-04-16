@@ -44,35 +44,120 @@
 #include "mongo/util/assert_util.h"
 #include "mongo/util/log.h"
 
+// MetadataManager exists only as a data member of a CollectionShardingState object.
+//
+// It maintains a set of std::shared_ptr<MetadataManager::Tracker> pointers: one in
+// _activeMetadataTracker, and more in a list _metadataInUse. It also contains a
+// CollectionRangeDeleter that queues orphan ranges to delete in a background thread, and a record
+// of the ranges being migrated in, to avoid deleting them.
+//
+// Free-floating MetadataManager::Tracker objects are maintained by these pointers, and also by
+// clients in ScopedCollectionMetadata objects obtained via CollectionShardingState::getMetadata().
+//
+// A Tracker object keeps:
+//   a std::unique_ptr<CollectionMetadata>, owning a map of the chunks owned by the shard,
+//   a key range [min,max) of orphaned documents that may be deleted when the count goes to zero,
+//   a count of the ScopedCollectionMetadata objects that have pointers to it,
+//   a mutex lock, serializing access to:
+//     a pointer back to the MetadataManager object that created it.
+//
+//                                          __________________________
+//  (s): std::shared_ptr<>         Clients:| ScopedCollectionMetadata |
+//  (u): std::unique_ptr<>                 |              tracker (s)-----------+
+//   ________________________________      |__________________________| |       |
+//  | CollectionShardingState        |       |             tracker (s)--------+ +
+//  |                                |       |__________________________| |   | |
+//  |  ____________________________  |          |            tracker (s)----+ | |
+//  | | MetadataManager            | |          |_________________________| | | |
+//  | |                            | |      ________________________        | | |
+//  | | _activeMetadataTracker (s)-------->| Tracker                |<------+ | | (1 reference)
+//  | |                            | |     |  ______________________|_        | |
+//  | |                 [ (s),-------------->| Tracker                |       | | (0 references)
+//  | |                   (s),---------\   | |  ______________________|_      | |
+//  | | _metadataInUse   ...  ]    | |  \----->| Tracker                |<----+-+ (2 references)
+//  | |  ________________________  | |     | | |                        |   ______________________
+//  | | | CollectionRangeDeleter | | |     | | | metadata (u)------------->| CollectionMetadata   |
+//  | | |                        | | |     | | | [ orphans [min,max) ]  |  |                      |
+//  | | | _orphans [ [min,max),  | | |     | | | usageCounter           |  |  _chunksMap          |
+//  | | |            [min,max),  | | |     | | | trackerLock:           |  |  _chunkVersion       |
+//  | | |                  ... ] | |<--------------manager              |  |  ...                 |
+//  | | |                        | | |     |_| |                        |  |______________________|
+//  | | |________________________| | |       |_|                        |
+//  | |                            | |         |________________________|
+//
+//  A ScopedCollectionMetadata object is created and held during a query, and destroyed when the
+//  query no longer needs access to the collection. Its destructor decrements the Tracker's
+//  usageCounter.
+//
+//  When a new chunk mapping replaces _activeMetadata, if any queries still depend on the current
+//  mapping, it is pushed onto the back of _metadataInUse.
+//
+//  Trackers pointed to from _metadataInUse, and their associated CollectionMetadata, are maintained
+//  at least as long as any query holds a ScopedCollectionMetadata object referring to them, or to
+//  any older tracker. In the diagram above, the middle Tracker must be kept until the one below it
+//  is disposed of.  (Note that _metadataInUse as shown here has its front() at the bottom, back()
+//  at the top.)
+
 namespace mongo {
 
 using TaskExecutor = executor::TaskExecutor;
 using CallbackArgs = TaskExecutor::CallbackArgs;
 
+struct MetadataManager::Tracker {
+    /**
+     * Creates a new Tracker with the usageCounter initialized to zero.
+     */
+    Tracker(std::unique_ptr<CollectionMetadata>, MetadataManager*);
+
+    std::unique_ptr<CollectionMetadata> metadata;
+    uint32_t usageCounter{0};
+    boost::optional<ChunkRange> orphans{boost::none};
+
+    // lock guards access to manager, which is zeroed by the ~MetadataManager(), but used by
+    // ScopedCollectionMetadata when usageCounter falls to zero.
+    stdx::mutex trackerLock;
+    MetadataManager* manager{nullptr};
+};
+
 MetadataManager::MetadataManager(ServiceContext* sc, NamespaceString nss, TaskExecutor* executor)
     : _nss(std::move(nss)),
       _serviceContext(sc),
-      _activeMetadataTracker(stdx::make_unique<CollectionMetadataTracker>(nullptr)),
+      _activeMetadataTracker(std::make_shared<Tracker>(nullptr, this)),
       _receivingChunks(SimpleBSONObjComparator::kInstance.makeBSONObjIndexedMap<CachedChunkInfo>()),
       _notification(std::make_shared<Notification<Status>>()),
       _executor(executor),
       _rangesToClean() {}
 
 MetadataManager::~MetadataManager() {
-    stdx::lock_guard<stdx::mutex> scopedLock(_managerLock);
+    {
+        // Block access to _retireExpiredMetadata by clients' ~ScopedCollectionMetadata() calls.
+        stdx::lock_guard<stdx::mutex> scopedLock(_managerLock);
+        _shuttingDown = true;
+    }
     if (!*_notification) {  // must check because test driver triggers it
         _notification->set(Status{ErrorCodes::InterruptedDueToReplStateChange,
                                   "tracking orphaned range deletion abandoned because the"
                                   " collection was dropped or became unsharded"});
     }
+    // Trackers can outlive MetadataManager, so we still need to lock the tracker:
+    std::for_each(_metadataInUse.begin(), _metadataInUse.end(), [](auto& tp) {
+        stdx::lock_guard<stdx::mutex> scopedLock(tp->trackerLock);
+        tp->manager = nullptr;
+    });
+    {
+        stdx::lock_guard<stdx::mutex> scopedLock(_activeMetadataTracker->trackerLock);
+        _activeMetadataTracker->manager = nullptr;
+    }
+    // Get in line behind the last threads still operating on *this.
+    stdx::lock_guard<stdx::mutex> scopedLock(_managerLock);
 }
 
 ScopedCollectionMetadata MetadataManager::getActiveMetadata() {
     stdx::lock_guard<stdx::mutex> scopedLock(_managerLock);
-    if (!_activeMetadataTracker) {
-        return ScopedCollectionMetadata();
+    if (_activeMetadataTracker) {
+        return ScopedCollectionMetadata(_activeMetadataTracker);
     }
-    return ScopedCollectionMetadata(this, _activeMetadataTracker.get());
+    return ScopedCollectionMetadata();
 }
 
 size_t MetadataManager::numberOfMetadataSnapshots() {
@@ -168,16 +253,17 @@ void MetadataManager::refreshActiveMetadata(std::unique_ptr<CollectionMetadata> 
 }
 
 void MetadataManager::_setActiveMetadata_inlock(std::unique_ptr<CollectionMetadata> newMetadata) {
-    if (_activeMetadataTracker->usageCounter != 0 || !_metadataInUse.empty()) {
+    if (_activeMetadataTracker->usageCounter != 0) {
         _metadataInUse.push_back(std::move(_activeMetadataTracker));
     }
-    _activeMetadataTracker = stdx::make_unique<CollectionMetadataTracker>(std::move(newMetadata));
+    _activeMetadataTracker = std::make_shared<Tracker>(std::move(newMetadata), this);
 }
 
 // call locked
 void MetadataManager::_retireExpiredMetadata() {
     bool notify = false;
     while (!_metadataInUse.empty() && _metadataInUse.front()->usageCounter == 0) {
+        // No ScopedCollectionMetadata can see this Tracker, other than, maybe, the caller.
         auto& tracker = _metadataInUse.front();
         if (tracker->orphans) {
             notify = true;
@@ -185,7 +271,8 @@ void MetadataManager::_retireExpiredMetadata() {
                   << " finished; scheduling range for deletion";
             _pushRangeToClean(*tracker->orphans);
         }
-        _metadataInUse.pop_front();  // Discard the tracker and its metadata.
+        tracker->metadata.reset();   // Discard the CollectionMetadata.
+        _metadataInUse.pop_front();  // Disconnect from the tracker (and maybe destroy it)
     }
     if (_metadataInUse.empty() && _activeMetadataTracker->orphans) {
         notify = true;
@@ -199,74 +286,73 @@ void MetadataManager::_retireExpiredMetadata() {
     }
 }
 
-// this is called only from ScopedCollectionMetadata members, unlocked.
-void MetadataManager::_decrementTrackerUsage(ScopedCollectionMetadata const& scoped) {
-
-    if (scoped._tracker != nullptr) {
-        stdx::lock_guard<stdx::mutex> lock(_managerLock);
-
-        invariant(scoped._tracker->usageCounter != 0);
-        if (--scoped._tracker->usageCounter == 0) {
-            // We don't care which usageCounter went to zero.  We just expire all that are older
-            // than the oldest tracker still in use by queries. (Some start out at zero, some go to
-            // zero but can't be expired yet.)
-
-            _retireExpiredMetadata();
-        }
-    }
-}
-
-MetadataManager::CollectionMetadataTracker::CollectionMetadataTracker(
-    std::unique_ptr<CollectionMetadata> m)
-    : metadata(std::move(m)) {}
-
-ScopedCollectionMetadata::ScopedCollectionMetadata() = default;
-
-// called locked
-ScopedCollectionMetadata::ScopedCollectionMetadata(
-    MetadataManager* manager, MetadataManager::CollectionMetadataTracker* tracker)
-    : _manager(manager), _tracker(tracker) {
-    ++_tracker->usageCounter;
-}
-
-// do not call locked
-ScopedCollectionMetadata::~ScopedCollectionMetadata() {
-    if (_manager) {
-        _manager->_decrementTrackerUsage(*this);
-    }
-}
-
-CollectionMetadata* ScopedCollectionMetadata::operator->() const {
-    return _tracker->metadata.get();
-}
-
-CollectionMetadata* ScopedCollectionMetadata::getMetadata() const {
-    return _tracker->metadata.get();
-}
+MetadataManager::Tracker::Tracker(std::unique_ptr<CollectionMetadata> md, MetadataManager* mgr)
+    : metadata(std::move(md)), manager(mgr) {}
 
 // ScopedCollectionMetadata members
 
-// do not call locked
-ScopedCollectionMetadata::ScopedCollectionMetadata(ScopedCollectionMetadata&& other) {
-    *this = std::move(other);  // Rely on _tracker being zero-initialized already.
+// call with MetadataManager locked
+ScopedCollectionMetadata::ScopedCollectionMetadata(
+    std::shared_ptr<MetadataManager::Tracker> tracker)
+    : _tracker(std::move(tracker)) {
+    ++_tracker->usageCounter;
 }
 
-// do not call locked
+ScopedCollectionMetadata::~ScopedCollectionMetadata() {
+    _clear();
+}
+
+CollectionMetadata* ScopedCollectionMetadata::operator->() const {
+    return _tracker ? _tracker->metadata.get() : nullptr;
+}
+
+CollectionMetadata* ScopedCollectionMetadata::getMetadata() const {
+    return _tracker ? _tracker->metadata.get() : nullptr;
+}
+
+void ScopedCollectionMetadata::_clear() {
+    if (!_tracker) {
+        return;
+    }
+    // Note: There is no risk of deadlock here because the only other place in MetadataManager
+    // that takes the trackerLock, ~MetadataManager(), does not hold _managerLock at the same time,
+    // and ScopedCollectionMetadata takes _managerLock only here.
+    stdx::unique_lock<stdx::mutex> trackerLock(_tracker->trackerLock);
+    MetadataManager* manager = _tracker->manager;
+    if (manager) {
+        stdx::lock_guard<stdx::mutex> managerLock(_tracker->manager->_managerLock);
+        trackerLock.unlock();
+        invariant(_tracker->usageCounter != 0);
+        if (--_tracker->usageCounter == 0 && !manager->_shuttingDown) {
+            // MetadataManager doesn't care which usageCounter went to zero.  It justs retires all
+            // that are older than the oldest tracker still in use by queries. (Some start out at
+            // zero, some go to zero but can't be expired yet.)  Note that new instances of
+            // ScopedCollectionMetadata may get attached to the active tracker, so its usage
+            // count can increase from zero, unlike most reference counts.
+            manager->_retireExpiredMetadata();
+        }
+    } else {
+        trackerLock.unlock();
+    }
+    _tracker.reset();  // disconnect from the tracker.
+}
+
+// do not call with MetadataManager locked
+ScopedCollectionMetadata::ScopedCollectionMetadata(ScopedCollectionMetadata&& other) {
+    *this = std::move(other);  // Rely on this->_tracker being zero-initialized already.
+}
+
+// do not call with MetadataManager locked
 ScopedCollectionMetadata& ScopedCollectionMetadata::operator=(ScopedCollectionMetadata&& other) {
     if (this != &other) {
-        if (_manager) {
-            _manager->_decrementTrackerUsage(*this);
-        }
-        _manager = other._manager;
-        _tracker = other._tracker;
-        other._manager = nullptr;
-        other._tracker = nullptr;
+        _clear();
+        _tracker = std::move(other._tracker);
     }
     return *this;
 }
 
 ScopedCollectionMetadata::operator bool() const {
-    return _tracker && _tracker->metadata.get();
+    return _tracker && _tracker->metadata;  // with a Collection lock the metadata member is stable
 }
 
 void MetadataManager::toBSONPending(BSONArrayBuilder& bb) const {

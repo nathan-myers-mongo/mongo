@@ -185,6 +185,7 @@ bool CollectionShardingState::collectionIsSharded() {
 /* static */
 Status CollectionShardingState::waitForClean(OperationContext* opCtx,
                                              NamespaceString nss,
+                                             OID const& epoch,
                                              ChunkRange orphanRange) {
     do {
         auto stillScheduled = CollectionShardingState::CleanupNotification(nullptr);
@@ -192,9 +193,12 @@ Status CollectionShardingState::waitForClean(OperationContext* opCtx,
             AutoGetCollection autoColl(opCtx, nss, MODE_IX);
             // First, see if collection was dropped.
             auto css = CollectionShardingState::get(opCtx, nss);
-            if (!css->getMetadata()) {
-                return {ErrorCodes::StaleShardVersion, "Collection being migrated was dropped"};
-            }
+            {
+                auto metadata = css->_metadataManager.getActiveMetadata();
+                if (!metadata || metadata->getCollVersion().epoch() != epoch) {
+                    return {ErrorCodes::StaleShardVersion, "Collection being migrated was dropped"};
+                }
+            }  // drop metadata
             stillScheduled = css->_metadataManager.trackOrphanedDataCleanup(orphanRange);
             if (stillScheduled == nullptr) {
                 log() << "Finished deleting " << nss.ns() << " range "
