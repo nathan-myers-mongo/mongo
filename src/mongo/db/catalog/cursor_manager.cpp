@@ -508,14 +508,6 @@ ClientCursorPin CursorManager::registerCursor(ClientCursorParams&& cursorParams)
     return _registerCursor_inlock(std::move(clientCursor));
 }
 
-ClientCursorPin CursorManager::registerRangePreserverCursor(const Collection* collection) {
-    stdx::lock_guard<SimpleMutex> lk(_mutex);
-    CursorId cursorId = _allocateCursorId_inlock();
-    std::unique_ptr<ClientCursor, ClientCursor::Deleter> clientCursor(
-        new ClientCursor(collection, this, cursorId));
-    return _registerCursor_inlock(std::move(clientCursor));
-}
-
 ClientCursorPin CursorManager::_registerCursor_inlock(
     std::unique_ptr<ClientCursor, ClientCursor::Deleter> clientCursor) {
     CursorId cursorId = clientCursor->cursorid();

@@ -30,6 +30,7 @@
 
 #include "mongo/db/catalog/collection.h"
 #include "mongo/db/clientcursor.h"
+#include "mongo/db/s/collection_metadata.h"
 
 namespace mongo {
 
@@ -49,24 +50,21 @@ public:
     RangePreserver(const Collection* collection) {
         // Empty collections don't have any data we need to preserve
         if (collection) {
-            // Pin keeps the CC from being deleted while it's in scope.  We delete it ourselves.
-            _pin.emplace(collection->getCursorManager()->registerRangePreserverCursor(collection));
+            auto client = Client::getCurrent();
+            auto opCtx = client->getOperationContext();
+            if (opCtx) {
+                auto css = CollectionShardingState::get(opCtx, collection->ns());
+                metadata.emplace(css->getMetadata());
+            }
         }
     }
 
     void release() {
-        if (_pin) {
-            _pin->deleteUnderlying();
-            _pin.reset();
-        }
-    }
-
-    ~RangePreserver() {
-        release();
+        metadata = boost::none;
     }
 
 private:
-    boost::optional<ClientCursorPin> _pin;
+    boost::optional<ScopedCollectionMetadata> metadata{boost::none};
 };
 
 }  // namespace mongo

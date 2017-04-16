@@ -127,12 +127,6 @@ public:
     ClientCursorPin registerCursor(ClientCursorParams&& cursorParams);
 
     /**
-     * Constructs and pins a special ClientCursor used to track sharding state for the given
-     * collection. See range_preserver.h for more details.
-     */
-    ClientCursorPin registerRangePreserverCursor(const Collection* collection);
-
-    /**
      * Pins and returns the cursor with the given id.
      *
      * Returns ErrorCodes::CursorNotFound if the cursor does not exist.

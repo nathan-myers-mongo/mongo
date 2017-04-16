@@ -35,6 +35,7 @@
 #include "mongo/db/pipeline/document_source_limit.h"
 #include "mongo/db/query/plan_summary_stats.h"
 #include "mongo/db/range_preserver.h"
+#include "mongo/db/s/collection_sharding_state.h"
 
 namespace mongo {
 
@@ -158,7 +159,6 @@ private:
     boost::optional<ParsedDeps> _dependencies;
     boost::intrusive_ptr<DocumentSourceLimit> _limit;
     long long _docsAddedToBatches;  // for _limit enforcement
-
     RangePreserver _rangePreserver;
     std::unique_ptr<PlanExecutor> _exec;
     BSONObjSet _outputSorts;

@@ -234,7 +234,7 @@ public:
 
         // Prevent chunks from being cleaned up during yields - this allows us to only check the
         // version on initial entry into geoNear.
-        RangePreserver preserver(collection);
+        auto metadata = CollectionShardingState::get(opCtx, collection->ns())->getMetadata();
 
         auto statusWithPlanExecutor =
             getExecutor(opCtx, collection, std::move(cq), PlanExecutor::YIELD_AUTO, 0);
