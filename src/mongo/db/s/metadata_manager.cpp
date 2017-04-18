@@ -253,7 +253,7 @@ void MetadataManager::refreshActiveMetadata(std::unique_ptr<CollectionMetadata> 
 }
 
 void MetadataManager::_setActiveMetadata_inlock(std::unique_ptr<CollectionMetadata> newMetadata) {
-    if (_activeMetadataTracker->usageCounter != 0) {
+    if (_activeMetadataTracker->usageCounter != 0 || _activeMetadataTracker->orphans) {
         _metadataInUse.push_back(std::move(_activeMetadataTracker));
     }
     _activeMetadataTracker = std::make_shared<Tracker>(std::move(newMetadata), this);
