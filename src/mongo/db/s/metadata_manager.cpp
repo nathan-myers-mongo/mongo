@@ -96,7 +96,7 @@
 //  at least as long as any query holds a ScopedCollectionMetadata object referring to them, or to
 //  any older tracker. In the diagram above, the middle Tracker must be kept until the one below it
 //  is disposed of.  (Note that _metadataInUse as shown here has its front() at the bottom, back()
-//  at the top.)
+//  at the top. As usual, new entries are pushed onto the back, popped off the front.)
 
 namespace mongo {
 
@@ -133,8 +133,9 @@ MetadataManager::~MetadataManager() {
         // Block access to _retireExpiredMetadata by clients' ~ScopedCollectionMetadata() calls.
         stdx::lock_guard<stdx::mutex> scopedLock(_managerLock);
         _shuttingDown = true;
-    }
-    if (!*_notification) {  // must check because test driver triggers it
+    }  // drop lock, allow threads that might remove _metadataInUse entries to drain
+    if (!*_notification) {  // check just because test driver triggers it
+        stdx::lock_guard<stdx::mutex> scopedLock(_managerLock);
         _notification->set(Status{ErrorCodes::InterruptedDueToReplStateChange,
                                   "tracking orphaned range deletion abandoned because the"
                                   " collection was dropped or became unsharded"});
