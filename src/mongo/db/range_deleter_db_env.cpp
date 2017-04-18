@@ -58,61 +58,10 @@ using std::string;
  * 5. Delete range.
  * 6. Wait until the majority of the secondaries catch up.
  */
-bool RangeDeleterDBEnv::deleteRange(OperationContext* opCtx,
-                                    const RangeDeleteEntry& taskDetails,
-                                    long long int* deletedDocs,
-                                    std::string* errMsg) {
-    const string ns(taskDetails.options.range.ns);
-    const BSONObj inclusiveLower(taskDetails.options.range.minKey);
-    const BSONObj exclusiveUpper(taskDetails.options.range.maxKey);
-    const BSONObj keyPattern(taskDetails.options.range.keyPattern);
-    const WriteConcernOptions writeConcern(taskDetails.options.writeConcern);
-    const bool fromMigrate = taskDetails.options.fromMigrate;
-    const bool onlyRemoveOrphans = taskDetails.options.onlyRemoveOrphanedDocs;
-
-    Client::initThreadIfNotAlready("RangeDeleter");
-
-    *deletedDocs = 0;
-    OperationShardingState::IgnoreVersioningBlock forceVersion(opCtx, NamespaceString(ns));
-
-    Helpers::RemoveSaver removeSaver("moveChunk", ns, taskDetails.options.removeSaverReason);
-    Helpers::RemoveSaver* removeSaverPtr = NULL;
-    if (serverGlobalParams.moveParanoia && !taskDetails.options.removeSaverReason.empty()) {
-        removeSaverPtr = &removeSaver;
-    }
-
-    // log the opId so the user can use it to cancel the delete using killOp.
-    unsigned int opId = opCtx->getOpID();
-    log() << "Deleter starting delete for: " << ns << " from " << redact(inclusiveLower) << " -> "
-          << redact(exclusiveUpper) << ", with opId: " << opId;
-
-    try {
-        *deletedDocs =
-            Helpers::removeRange(opCtx,
-                                 KeyRange(ns, inclusiveLower, exclusiveUpper, keyPattern),
-                                 BoundInclusion::kIncludeStartKeyOnly,
-                                 writeConcern,
-                                 removeSaverPtr,
-                                 fromMigrate,
-                                 onlyRemoveOrphans);
-
-        if (*deletedDocs < 0) {
-            *errMsg = "collection or index dropped before data could be cleaned";
-            warning() << *errMsg;
-
-            return false;
-        }
-
-        log() << "rangeDeleter deleted " << *deletedDocs << " documents for " << ns << " from "
-              << redact(inclusiveLower) << " -> " << redact(exclusiveUpper);
-    } catch (const DBException& ex) {
-        *errMsg = str::stream() << "Error encountered while deleting range: "
-                                << "ns" << ns << " from " << inclusiveLower << " -> "
-                                << exclusiveUpper << ", cause by:" << causedBy(ex);
-
-        return false;
-    }
-
+bool RangeDeleterDBEnv::deleteRange(OperationContext*,
+                                    const RangeDeleteEntry&,
+                                    long long int*,
+                                    std::string*) {
     return true;
 }
 
