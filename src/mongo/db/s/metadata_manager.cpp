@@ -130,27 +130,33 @@ MetadataManager::MetadataManager(ServiceContext* sc, NamespaceString nss, TaskEx
 
 MetadataManager::~MetadataManager() {
     {
-        // Block access to _retireExpiredMetadata by clients' ~ScopedCollectionMetadata() calls.
         stdx::lock_guard<stdx::mutex> scopedLock(_managerLock);
         _shuttingDown = true;
-    }  // drop lock, allow threads that might remove _metadataInUse entries to drain
-    if (!*_notification) {  // check just because test driver triggers it
-        stdx::lock_guard<stdx::mutex> scopedLock(_managerLock);
-        _notification->set(Status{ErrorCodes::InterruptedDueToReplStateChange,
-                                  "tracking orphaned range deletion abandoned because the"
-                                  " collection was dropped or became unsharded"});
     }
-    // Trackers can outlive MetadataManager, so we still need to lock the tracker:
+    {
+        // drain any threads that might remove _metadataInUse entries, push to deleter
+        stdx::lock_guard<stdx::mutex> scopedLock(_managerLock);
+    }
+
+    // Trackers can outlive MetadataManager, so we still need to lock each tracker...
     std::for_each(_metadataInUse.begin(), _metadataInUse.end(), [](auto& tp) {
         stdx::lock_guard<stdx::mutex> scopedLock(tp->trackerLock);
         tp->manager = nullptr;
     });
-    {
+    { // ... and the active one too
         stdx::lock_guard<stdx::mutex> scopedLock(_activeMetadataTracker->trackerLock);
         _activeMetadataTracker->manager = nullptr;
     }
-    // Get in line behind the last threads still operating on *this.
+
+    // still need to block the deleter thread:
     stdx::lock_guard<stdx::mutex> scopedLock(_managerLock);
+    Status status{ErrorCodes::InterruptedDueToReplStateChange,
+                  "tracking orphaned range deletion abandoned because the"
+                  " collection was dropped or became unsharded"};
+    if (!*_notification) {  // check just because test driver triggers it
+        _notification->set(status);
+    }
+    _rangesToClean.clear(status);
 }
 
 ScopedCollectionMetadata MetadataManager::getActiveMetadata() {
@@ -336,6 +342,7 @@ void ScopedCollectionMetadata::_clear() {
         trackerLock.unlock();
     }
     _tracker.reset();  // disconnect from the tracker.
+
 }
 
 // do not call with MetadataManager locked
