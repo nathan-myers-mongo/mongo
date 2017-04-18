@@ -133,17 +133,19 @@ MetadataManager::~MetadataManager() {
         stdx::lock_guard<stdx::mutex> scopedLock(_managerLock);
         _shuttingDown = true;
     }
+    std::list<std::shared_ptr<Tracker>> inUse;
     {
         // drain any threads that might remove _metadataInUse entries, push to deleter
         stdx::lock_guard<stdx::mutex> scopedLock(_managerLock);
+        inUse = std::move(_metadataInUse);
     }
 
     // Trackers can outlive MetadataManager, so we still need to lock each tracker...
-    std::for_each(_metadataInUse.begin(), _metadataInUse.end(), [](auto& tp) {
+    std::for_each(inUse.begin(), inUse.end(), [](auto& tp) {
         stdx::lock_guard<stdx::mutex> scopedLock(tp->trackerLock);
         tp->manager = nullptr;
     });
-    { // ... and the active one too
+    {  // ... and the active one too
         stdx::lock_guard<stdx::mutex> scopedLock(_activeMetadataTracker->trackerLock);
         _activeMetadataTracker->manager = nullptr;
     }
@@ -342,7 +344,6 @@ void ScopedCollectionMetadata::_clear() {
         trackerLock.unlock();
     }
     _tracker.reset();  // disconnect from the tracker.
-
 }
 
 // do not call with MetadataManager locked
