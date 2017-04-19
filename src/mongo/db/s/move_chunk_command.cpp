@@ -38,6 +38,7 @@
 #include "mongo/db/commands.h"
 #include "mongo/db/db_raii.h"
 #include "mongo/db/range_deleter_service.h"
+#include "mongo/db/repl/repl_client_info.h"
 #include "mongo/db/s/chunk_move_write_concern_options.h"
 #include "mongo/db/s/collection_metadata.h"
 #include "mongo/db/s/collection_sharding_state.h"
@@ -232,6 +233,7 @@ private:
         if (moveChunkRequest.getWaitForDelete()) {
             CollectionShardingState::waitForClean(
                 opCtx, moveChunkRequest.getNss(), moveChunkRequest.getVersionEpoch(), range);
+            repl::ReplClientInfo::forClient(opCtx->getClient()).setLastOpToSystemLastOpTime(opCtx);
         } else {
             log() << "Leaving cleanup of " << moveChunkRequest.getNss().ns() << " range "
                   << redact(range.toString()) << " to complete in background";
