@@ -50,6 +50,9 @@ class MetadataManager {
     MONGO_DISALLOW_COPYING(MetadataManager);
 
 public:
+    struct Tracker;
+    using Ref = std::list<Tracker>::const_iterator;
+     
     MetadataManager(ServiceContext*, NamespaceString nss, executor::TaskExecutor* rangeDeleter);
     ~MetadataManager();
 
@@ -136,7 +139,6 @@ public:
     boost::optional<KeyRange> getNextOrphanRange(BSONObj const& from);
 
 private:
-    struct Tracker;
 
     /**
      * Retires any metadata that has fallen out of use, and pushes any orphan ranges found in them
@@ -147,7 +149,7 @@ private:
     /**
      * Pushes current set of chunks, if any, to _metadataInUse, replaces it with newMetadata.
      */
-    void _setActiveMetadata_inlock(std::unique_ptr<CollectionMetadata> newMetadata);
+    void _setActiveMetadata_inlock(CollectionMetadata newMetadata);
 
     /**
      * Returns true if the specified range overlaps any chunk that might be currently in use by a
@@ -208,17 +210,20 @@ private:
     // ServiceContext from which to obtain instances of global support objects.
     ServiceContext* const _serviceContext;
 
+    // this is copied into ScopedCollectionMetadata objects.
+    std::shared_ptr<MetadataManager> const& _self;
+
     // Mutex to protect the state below
     stdx::mutex _managerLock;
 
     bool _shuttingDown{false};
 
     // The collection metadata reflecting chunks accessible to new queries
-    std::shared_ptr<Tracker> _activeMetadataTracker;
+    Ref _activeMetadataTracker;
 
     // Previously active collection metadata instances still in use by active server operations or
     // cursors
-    std::list<std::shared_ptr<Tracker>> _metadataInUse;
+    std::list<Tracker> _metadataInUse;
 
     // Chunk ranges being migrated into to the shard. Indexed by the min key of the range.
     RangeMap _receivingChunks;
@@ -280,14 +285,15 @@ private:
      *
      * Must be called with tracker->manager locked.
      */
-    ScopedCollectionMetadata(std::shared_ptr<MetadataManager::Tracker> tracker);
+    ScopedCollectionMetadata(std::shared_ptr<MetadataManager>, Ref tracker);
 
     /**
      * Disconnect from the tracker, possibly triggering GC of unused CollectionMetadata.
      */
     void _clear();
 
-    std::shared_ptr<MetadataManager::Tracker> _tracker{nullptr};
+    MetadataManager::Ref _tracker{};
+    std::shared_ptr<MetadataManager> manager{nullptr};
 
     friend ScopedCollectionMetadata MetadataManager::getActiveMetadata();  // uses our private ctor
 };
