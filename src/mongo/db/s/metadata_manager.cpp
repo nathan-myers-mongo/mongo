@@ -57,51 +57,57 @@
 //
 // The MetadataManager::Tracker elements in _metadataInUse are kept as long as there is a
 //   ScopedCollectionMetadata object with an iterator to it.  When its use count goes to zero, it
-//   is considered expired, and it is erased when it becomes the oldest tracker. 
+//   is considered expired, and it is erased when it becomes the oldest tracker.
 //
 // A Tracker object keeps:
-//   a std::unique_ptr<CollectionMetadata>, owning a map of the chunks owned by the shard,
 //   a count of the ScopedCollectionMetadata objects that have pointers to it,
-//   a list of shard key ranges [min,max) of orphaned documents that may be deleted when the count
-//     goes to zero.                        ____________________________
-//                                Clients: | ScopedCollectionMetadata   | 
-//                                         |                            |_ 
-//  (s): std::shared_ptr<>              +<--(s) _manager  _tracker (it)----------->+  
-//  (it): iterator                      |  |____________________________| |        |
-//   ________________________________   |<----(s) _manager _tracker (it)---------->+
-//  | CollectionShardingState        |  |    |____________________________| |      |
-//  |           _metadataManager (s)--->|<------(s) _manager _tracker (it)---->+   |
-//  |________________________________|  |      |____________________________|  |   |
-//                                      |                                      |   |
-//     _________________________________v_______________________________       |   |  
-//    | MetadataManager                                                 |      |   |
-//    |                                __________________________       |      v   |
-//    |               _metadataInUse: | Tracker           (back) |<------------+   | (1 uses)
-//    |                               |  ________________________|_     |          |
-//    | _activeMetadataTracker(it)--->| | Tracker                  |    |          |
-//    |                               | |  ________________________|_   |          | (0 uses) 
-//    |                               | | | Tracker          (front) |  |          |
-//    |  ________________________     | | |                          |  |          v
-//    | | CollectionRangeDeleter |    | | |             usageCounter |<------------+ (2 uses)
-//    | |                        |    | | | orphans [ [min,max),     |  |
-//    | | _orphans [ [min,max),  |    | | |                ...  ]    |  |
-//    | |            [min,max),  |    | | | metadata:                |  |
-//    | |                  ... ] |    | | |  ______________________  |  |
-//    | |________________________|    |_| |  | CollectionMetadata  | |  |
-//    |                                 | |  |                     | |  |
-//    |  _receivingChunks               | |  |  _chunksMap         | |  |
-//    |                                 |_|  |  _chunkVersion      | |  |
-//    |                                   |  |  . . .              | |  |
-//    |                                   |  |_____________________| |  |
-//    |                                   |__________________________|  |
-//    |_________________________________________________________________|
+//   a list of Deletions, shard key ranges [min,max) of orphaned documents that may be scheduled
+//     for deletion when the count goes to zero, with notifications to be signaled when deleting the
+//     range is complete, or fails,
+//   a CollectionMetadata, owning a map of the chunks owned by the shard,
+//
+//                                        _____________________________
+//                              Clients: | ScopedCollectionMetadata    |
+//                                       |                             |___
+//  (s): std::shared_ptr<>           +---<(s) _manager  _tracker (it)>--------------------+
+//  (it): list iterator              |   |_____________________________|   |__            |
+//   __________________________      |  +---<(s) _manager    _tracker (it)>-----------+   |
+//  | CollectionShardingState  |     |  |   |______________________________|  |       |   |
+//  |      _metadataManager (s)>--+  |  |  +---<(s) _manager     _tracker (it)>---+   |   |
+//  |__________________________|  |  |  |  |   |______________________________|   |   |   |
+//                                |  |  |  |                                      |   |   |
+//      __________________________v__v__v__v__________________________________    |   |   |
+//     | MetadataManager                                                      |   |   |   |
+//     |                                _____________________________  (1 use)|   |   |   |
+//     |               _metadataInUse: | Tracker              (back) |<-----------+   |   |
+//     |                               |  ___________________________|_       |       |   |
+//     | _activeMetadataTracker(it)--->| | Tracker                     | (0 uses)     |   |
+//     |                               | |  ___________________________|_     |       |   |
+//     | _rangesToClean:               | | | Tracker             (front) | (2 uses)   |   |
+//     |   ________________________    | | |                             |<-----------+   |
+//     |  | CollectionRangeDeleter |   | | |               _usageCounter |<---------------+
+//     |  |                        |   | | | _orphans                    |    |
+//     |  | _orphans               |   | | |    [[min,max),notifn,       |    |
+//     |  |    [[min,max),notifn,  |   | | |          ...        ]       |    |
+//     |  |     [min,max),notifn,  |   | | |                             |    |
+//     |  |              . . .  ]  |   | | | _metadata:                  |    |
+//     |  |________________________|   | | |   _____________________     |    |
+//     |                               | | |  | CollectionMetadata  |    |    |
+//     | _receivingChunks              | | |  |                     |    |    |
+//     |     [ [min,max),              |_| |  | _chunkVersion       |    |    |
+//     |            ... ]                | |  | _chunksMap          |    |    |
+//     |                                 |_|  |  . . .              |    |    |
+//     |                                   |  |_____________________|    |    |
+//     |                                   |_____________________________|    |
+//     |______________________________________________________________________|
 //
 //  A ScopedCollectionMetadata object is created and held during a query, and destroyed when the
 //  query no longer needs access to the collection. Its destructor decrements the Tracker's
 //  usageCounter.
 //
 //  When a new chunk mapping replaces _activeMetadata, if any queries still depend on the current
-//  mapping, it is pushed onto the back of _metadataInUse.
+//  mapping, it is pushed onto the back of _metadataInUse.  _activeMetadataTracker always points
+//  to _metadataInUse.back().
 //
 //  Trackers in _metadataInUse, and their associated CollectionMetadata, are maintained at least
 //  as long as any query holds a ScopedCollectionMetadata object referring to them, or to any
@@ -121,7 +127,7 @@ struct MetadataManager::Tracker {
     Tracker(CollectionMetadata);
 
     uint32_t _usageCounter{0};
-    std::list<ChunkRange> _orphans;
+    std::list<Deletion> _orphans;
     CollectionMetadata _metadata;
 };
 
@@ -132,13 +138,16 @@ MetadataManager::MetadataManager(ServiceContext* sc,
     : _nss(std::move(nss)),
       _serviceContext(sc),
       _self(self),
-      _activeMetadataTracker(std::make_shared<Tracker>(nullptr, this)),
+      _activeMetadataTracker(Ref()),
       _receivingChunks(SimpleBSONObjComparator::kInstance.makeBSONObjIndexedMap<CachedChunkInfo>()),
-      _notification(std::make_shared<Notification<Status>>()),
       _executor(executor),
       _rangesToClean() {}
 
 MetadataManager::~MetadataManager() {
+    _clear();
+}
+
+void MetadataManager::_clear() {
     stdx::lock_guard<stdx::mutex> scopedLock(_managerLock);
     std::list<Tracker> inUse;
     // drain any threads that might remove _metadataInUse entries, push to deleter
@@ -146,15 +155,19 @@ MetadataManager::~MetadataManager() {
     Status status{ErrorCodes::InterruptedDueToReplStateChange,
                   "tracking orphaned range deletion abandoned because the collection was dropped"
                   " or became unsharded"};
-    if (!*_notification) {  // check only because the test driver triggers it
-        _notification->set(status);
+    for (auto& tracker : _metadataInUse) {
+        for (auto& deletion : tracker._orphans) {
+            deletion.notification->set(status);
+        }
     }
+    _activeMetadataTracker = Ref();
+    _receivingChunks.clear();
     _rangesToClean.clear(status);
 }
 
 ScopedCollectionMetadata MetadataManager::getActiveMetadata() {
     stdx::lock_guard<stdx::mutex> scopedLock(_managerLock);
-    if (_activeMetadataTracker) {
+    if (_activeMetadataTracker != Ref()) {
         return ScopedCollectionMetadata(_self, _activeMetadataTracker);
     }
     return ScopedCollectionMetadata();
@@ -179,26 +192,21 @@ void MetadataManager::unshard() {
 
     // Collection is becoming unsharded
     log() << "Marking collection " << _nss.ns() << " with "
-          << _activeMetadataTracker->metadata.toStringBasic() << " as no longer sharded";
-    
-    _receivingChunks.clear();
-    _rangesToClean.clear(Status{ErrorCodes::InterruptedDueToReplStateChange,
-                "Collection sharding metadata destroyed"});
-    _setActiveMetadata_inlock(Ref());
+          << _activeMetadataTracker->_metadata.toStringBasic() << " as no longer sharded";
+    _clear();
     return;
-    }
 }
 
-void MetadataManager::refreshActiveMetadata(std::unique_ptr<CollectionMetadata> remoteMetadata) {
+void MetadataManager::refreshActiveMetadata(CollectionMetadata remoteMetadata) {
     stdx::lock_guard<stdx::mutex> scopedLock(_managerLock);
     // We should never be setting unsharded metadata
-    invariant(!remoteMetadata->getCollVersion().isWriteCompatibleWith(ChunkVersion::UNSHARDED()));
-    invariant(!remoteMetadata->getShardVersion().isWriteCompatibleWith(ChunkVersion::UNSHARDED()));
+    invariant(!remoteMetadata.getCollVersion().isWriteCompatibleWith(ChunkVersion::UNSHARDED()));
+    invariant(!remoteMetadata.getShardVersion().isWriteCompatibleWith(ChunkVersion::UNSHARDED()));
 
     // Collection is becoming sharded
-    if (!_activeMetadataTracker->metadata) {
+    if (_activeMetadataTracker == Ref()) {
         log() << "Marking collection " << _nss.ns() << " as sharded with "
-              << remoteMetadata->toStringBasic();
+              << remoteMetadata.toStringBasic();
 
         invariant(_receivingChunks.empty());
         invariant(_rangesToClean.isEmpty());
@@ -209,11 +217,12 @@ void MetadataManager::refreshActiveMetadata(std::unique_ptr<CollectionMetadata> 
 
     // If the metadata being installed has a different epoch from ours, this means the collection
     // was dropped and recreated, so we must entirely reset the metadata state
-    if (_activeMetadataTracker->metadata->getCollVersion().epoch() !=
-        remoteMetadata->getCollVersion().epoch()) {
+    auto version = _activeMetadataTracker->_metadata.getCollVersion();
+    auto newVersion = remoteMetadata.getCollVersion();
+    if (version.epoch() != newVersion.epoch()) {
         log() << "Overwriting metadata for collection " << _nss.ns() << " from "
-              << _activeMetadataTracker->metadata->toStringBasic() << " to "
-              << remoteMetadata->toStringBasic() << " due to epoch change";
+              << _activeMetadataTracker->_metadata.toStringBasic() << " to "
+              << remoteMetadata.toStringBasic() << " due to epoch change";
 
         _receivingChunks.clear();
         _rangesToClean.clear(Status::OK());
@@ -223,30 +232,28 @@ void MetadataManager::refreshActiveMetadata(std::unique_ptr<CollectionMetadata> 
     }
 
     // We already have newer version
-    if (_activeMetadataTracker->metadata->getCollVersion() >= remoteMetadata->getCollVersion()) {
+    if (version >= newVersion) {
         LOG(1) << "Ignoring refresh of active metadata "
-               << _activeMetadataTracker->metadata->toStringBasic() << " with an older "
-               << remoteMetadata->toStringBasic();
+               << _activeMetadataTracker->_metadata.toStringBasic() << " with an older "
+               << remoteMetadata.toStringBasic();
         return;
     }
 
     log() << "Refreshing metadata for collection " << _nss.ns() << " from "
-          << _activeMetadataTracker->metadata->toStringBasic() << " to "
-          << remoteMetadata->toStringBasic();
+          << _activeMetadataTracker->_metadata.toStringBasic() << " to "
+          << remoteMetadata.toStringBasic();
 
     // Resolve any receiving chunks, which might have completed by now.
     // Should be no more than one.
     for (auto it = _receivingChunks.begin(); it != _receivingChunks.end();) {
-        BSONObj const& min = it->first;
-        BSONObj const& max = it->second.getMaxKey();
-
-        if (!remoteMetadata->rangeOverlapsChunk(ChunkRange(min, max))) {
+        auto range = ChunkRange(it->first, it->second.getMaxKey());
+        if (!remoteMetadata.rangeOverlapsChunk(range)) {
             ++it;
             continue;
         }
         // The remote metadata contains a chunk we were earlier in the process of receiving, so
         // we deem it successfully received.
-        LOG(2) << "Verified chunk " << ChunkRange(min, max) << " for collection " << _nss.ns()
+        LOG(2) << "Verified chunk " << redact(range.toString()) << " for collection " << _nss.ns()
                << " has been migrated to this shard earlier";
 
         _receivingChunks.erase(it);
@@ -256,49 +263,45 @@ void MetadataManager::refreshActiveMetadata(std::unique_ptr<CollectionMetadata> 
     _setActiveMetadata_inlock(std::move(remoteMetadata));
 }
 
-void MetadataManager::_setActiveMetadata_inlock(std::unique_ptr<CollectionMetadata> newMetadata) {
-    if (_activeMetadataTracker->_usageCounter != 0 || _activeMetadataTracker->orphans) {
-        _metadataInUse.push_back(std::move(_activeMetadataTracker));
-    }
-    _activeMetadataTracker = std::make_shared<Tracker>(std::move(newMetadata), this);
+void MetadataManager::_setActiveMetadata_inlock(CollectionMetadata newMetadata) {
+    _metadataInUse.emplace_back(std::move(newMetadata));
+    _activeMetadataTracker = --_metadataInUse.end();
+    _retireExpiredMetadata();
 }
 
 // call locked
 void MetadataManager::_retireExpiredMetadata() {
+    // MetadataManager doesn't care which _usageCounter went to zero, if any.  It justs retires all
+    // that are older than the oldest tracker still in use by queries. (Some start out at zero, some
+    // go to zero but can't be expired yet.)  Note that new instances of ScopedCollectionMetadata
+    // may get attached to the active tracker, so its usage count can increase from zero, unlike
+    // most reference counts.
+    dassert(!_metadataInUse.empty());
     bool notify = false;
-    while (!_metadataInUse.empty() && _metadataInUse.front()->_usageCounter == 0) {
-        // No ScopedCollectionMetadata can see this Tracker, other than, maybe, the caller.
-        auto& tracker = _metadataInUse.front();
-        if (tracker->orphans) {
+    auto& tracker = _metadataInUse.front();
+    while (tracker._usageCounter == 0) {
+        if (!tracker._orphans.empty()) {
             notify = true;
-            log() << "Queries possibly dependent on " << _nss.ns() << " range " << *tracker->orphans
-                  << " finished; scheduling range for deletion";
-            _pushRangeToClean(*tracker->orphans);
+            log() << "Queries possibly dependent on " << _nss.ns() << " range(s) finished;"
+                                                                      " scheduling for deletion";
+            _pushListToClean(std::move(tracker._orphans));
         }
-        tracker->metadata.reset();   // Discard the CollectionMetadata.
+        if (_activeMetadataTracker == _metadataInUse.begin()) {  // no snapshots left
+            break;
+        };
         _metadataInUse.pop_front();  // Disconnect from the tracker (and maybe destroy it)
-    }
-    if (_metadataInUse.empty() && _activeMetadataTracker->orphans) {
-        notify = true;
-        log() << "Queries possibly dependent on " << _nss.ns() << " range "
-              << *_activeMetadataTracker->orphans << " finished; scheduling range for deletion";
-        _pushRangeToClean(*_activeMetadataTracker->orphans);
-        _activeMetadataTracker->orphans = boost::none;
-    }
-    if (notify) {
-        _notifyInUse();  // wake up waitForClean because we changed inUse
+        dassert(!_metadataInUse.empty());
     }
 }
 
-MetadataManager::Tracker::Tracker(CollectionMetadata md)
-    : metadata(std::move(md)) {}
+MetadataManager::Tracker::Tracker(CollectionMetadata md) : _metadata(std::move(md)) {}
 
 // ScopedCollectionMetadata members
 
 // call with MetadataManager locked
-ScopedCollectionMetadata::ScopedCollectionMetadata(
-    std::shared_ptr<MetadataManager::Tracker> tracker)
-    : _tracker(std::move(tracker)) {
+ScopedCollectionMetadata::ScopedCollectionMetadata(std::shared_ptr<MetadataManager> manager,
+                                                   MetadataManager::Ref tracker)
+    : _tracker(tracker), _manager(std::move(manager)) {
     ++_tracker->_usageCounter;
 }
 
@@ -307,38 +310,26 @@ ScopedCollectionMetadata::~ScopedCollectionMetadata() {
 }
 
 CollectionMetadata* ScopedCollectionMetadata::operator->() const {
-    return _tracker ? _tracker->metadata.get() : nullptr;
+    return _tracker != MetadataManager::Ref() ? &_tracker->_metadata : nullptr;
 }
 
 CollectionMetadata* ScopedCollectionMetadata::getMetadata() const {
-    return _tracker ? _tracker->metadata.get() : nullptr;
+    return _tracker != MetadataManager::Ref() ? &_tracker->_metadata : nullptr;
 }
 
 void ScopedCollectionMetadata::_clear() {
-    if (!_tracker) {
+    if (_tracker == MetadataManager::Ref()) {
         return;
     }
-    // Note: There is no risk of deadlock here because the only other place in MetadataManager
-    // that takes the trackerLock, ~MetadataManager(), does not hold _managerLock at the same time,
-    // and ScopedCollectionMetadata takes _managerLock only here.
-    stdx::unique_lock<stdx::mutex> trackerLock(_tracker->trackerLock);
-    MetadataManager* manager = _tracker->manager;
-    if (manager) {
-        stdx::lock_guard<stdx::mutex> managerLock(_tracker->manager->_managerLock);
-        trackerLock.unlock();
-        invariant(_tracker->_usageCounter != 0);
-        if (--_tracker->_usageCounter == 0 && !manager->_shuttingDown) {
-            // MetadataManager doesn't care which _usageCounter went to zero.  It justs retires all
-            // that are older than the oldest tracker still in use by queries. (Some start out at
-            // zero, some go to zero but can't be expired yet.)  Note that new instances of
-            // ScopedCollectionMetadata may get attached to the active tracker, so its usage
-            // count can increase from zero, unlike most reference counts.
-            manager->_retireExpiredMetadata();
+    if (_manager) {
+        stdx::lock_guard<stdx::mutex> managerLock(_manager->_managerLock);
+        dassert(_tracker->_usageCounter != 0);
+        if (--_tracker->_usageCounter == 0 && !_manager->_shuttingDown) {
+            _manager->_retireExpiredMetadata();
         }
-    } else {
-        trackerLock.unlock();
     }
-    _tracker.reset();  // disconnect from the tracker.
+    _tracker = MetadataManager::Ref();
+    _manager.reset();
 }
 
 // do not call with MetadataManager locked
@@ -350,13 +341,14 @@ ScopedCollectionMetadata::ScopedCollectionMetadata(ScopedCollectionMetadata&& ot
 ScopedCollectionMetadata& ScopedCollectionMetadata::operator=(ScopedCollectionMetadata&& other) {
     if (this != &other) {
         _clear();
-        _tracker = std::move(other._tracker);
+        std::swap(*this, other);
     }
     return *this;
 }
 
 ScopedCollectionMetadata::operator bool() const {
-    return _tracker && _tracker->metadata;  // with a Collection lock the metadata member is stable
+    return _tracker != MetadataManager::Ref() &&
+        _manager->_activeMetadataTracker != MetadataManager::Ref();
 }
 
 void MetadataManager::toBSONPending(BSONArrayBuilder& bb) const {
@@ -382,8 +374,11 @@ void MetadataManager::append(BSONObjBuilder* builder) {
     }
     pcArr.done();
 
+    if (_activeMetadataTracker == Ref()) {
+        return;
+    }
     BSONArrayBuilder amrArr(builder->subarrayStart("activeMetadataRanges"));
-    for (const auto& entry : _activeMetadataTracker->metadata->getChunks()) {
+    for (const auto& entry : _activeMetadataTracker->_metadata.getChunks()) {
         BSONObjBuilder obj;
         ChunkRange r = ChunkRange(entry.first, entry.second.getMaxKey());
         r.append(&obj);
@@ -406,9 +401,17 @@ void MetadataManager::_scheduleCleanup(executor::TaskExecutor* executor, Namespa
 }
 
 // call locked
-void MetadataManager::_pushRangeToClean(ChunkRange const& range) {
-    _rangesToClean.add(range);
-    if (_rangesToClean.size() == 1) {
+auto MetadataManager::_pushRangeToClean(ChunkRange const& range) -> CleanupNotification {
+    std::list<Deletion> ranges;
+    auto notifn = std::make_shared<Notification<Status>>();
+    Deletion deletion{ChunkRange(range.getMin().getOwned(), range.getMax().getOwned()), notifn};
+    ranges.emplace_back(std::move(deletion));
+    _pushListToClean(std::move(ranges));
+    return notifn;
+}
+
+void MetadataManager::_pushListToClean(std::list<Deletion> ranges) {
+    if (_rangesToClean.add(std::move(ranges))) {
         _scheduleCleanup(_executor, _nss);
     }
 }
@@ -419,20 +422,21 @@ void MetadataManager::_addToReceiving(ChunkRange const& range) {
                        CachedChunkInfo(range.getMax().getOwned(), ChunkVersion::IGNORED())));
 }
 
-bool MetadataManager::beginReceive(ChunkRange const& range) {
+auto MetadataManager::beginReceive(ChunkRange const& range) -> CleanupNotification {
     stdx::unique_lock<stdx::mutex> scopedLock(_managerLock);
+    invariant(_activeMetadataTracker != Ref());
+    invariant(!_metadataInUse.empty());
 
-    auto* metadata = _activeMetadataTracker->metadata.get();
-    if (_overlapsInUseChunk(range) || metadata->rangeOverlapsChunk(range)) {
-        log() << "Rejecting in-migration to " << _nss.ns() << " range " << range
-              << " because a running query might depend on documents in the range";
-        return false;
+    if (_overlapsInUseChunk(range)) {
+        CleanupNotification notifn = std::make_shared<Notification<Status>>();
+        notifn->set({ErrorCodes::RangeOverlapConflict,
+                     "Documents in target range may still be in use on the destination shard."});
+        return notifn;
     }
     _addToReceiving(range);
-    _pushRangeToClean(range);
-    log() << "Scheduling deletion of any documents in " << _nss.ns() << " range " << range
-          << " before migrating in a chunk covering the range";
-    return true;
+    log() << "Scheduling deletion of any documents in " << _nss.ns() << " range "
+          << redact(range.toString()) << " before migrating in a chunk covering the range";
+    return _pushRangeToClean(range);
 }
 
 void MetadataManager::_removeFromReceiving(ChunkRange const& range) {
@@ -448,57 +452,57 @@ void MetadataManager::forgetReceive(ChunkRange const& range) {
     log() << "Abandoning in-migration of " << _nss.ns() << " range " << range
           << "; scheduling deletion of any documents already copied";
 
-    invariant(!_overlapsInUseChunk(range) &&
-              !_activeMetadataTracker->metadata->rangeOverlapsChunk(range));
+    invariant(!_overlapsInUseChunk(range));
 
     _removeFromReceiving(range);
-    _pushRangeToClean(range);
+    (void)_pushRangeToClean(range);
 }
 
-Status MetadataManager::cleanUpRange(ChunkRange const& range) {
-    stdx::unique_lock<stdx::mutex> scopedLock(_managerLock);
-    CollectionMetadata* metadata = _activeMetadataTracker->metadata.get();
-    invariant(metadata != nullptr);
 
-    if (metadata->rangeOverlapsChunk(range)) {
-        return {ErrorCodes::RangeOverlapConflict,
-                str::stream() << "Requested deletion range overlaps a live shard chunk"};
+auto MetadataManager::cleanUpRange(ChunkRange const& range) -> CleanupNotification {
+
+    stdx::unique_lock<stdx::mutex> scopedLock(_managerLock);
+    invariant(_activeMetadataTracker != Ref());
+    invariant(!_metadataInUse.empty());
+    auto notifn = std::make_shared<Notification<Status>>();
+
+    if (_activeMetadataTracker->_metadata.rangeOverlapsChunk(range)) {
+        notifn->set({ErrorCodes::RangeOverlapConflict,
+                     str::stream() << "Requested deletion range overlaps a live shard chunk"});
+        return notifn;
     }
 
     if (rangeMapOverlaps(_receivingChunks, range.getMin(), range.getMax())) {
-        return {ErrorCodes::RangeOverlapConflict,
-                str::stream() << "Requested deletion range overlaps a chunk being migrated in"};
+        notifn->set(
+            {ErrorCodes::RangeOverlapConflict,
+             str::stream() << "Requested deletion range overlaps a chunk being migrated in"});
+        return notifn;
     }
 
     if (!_overlapsInUseChunk(range)) {
         // No running queries can depend on it, so queue it for deletion immediately.
         log() << "Scheduling " << _nss.ns() << " range " << redact(range.toString())
-              << " for deletion";
+              << " for immediate deletion";
 
-        _pushRangeToClean(range);
-    } else {
-        invariant(!_metadataInUse.empty());
-
-        if (_activeMetadataTracker->orphans) {
-            _setActiveMetadata_inlock(_activeMetadataTracker->metadata->clone());
-        }
-
-        _activeMetadataTracker->orphans.emplace(range.getMin().getOwned(),
-                                                range.getMax().getOwned());
-
-        log() << "Scheduling " << _nss.ns() << " range " << redact(range.toString())
-              << " for deletion after all possibly-dependent queries finish";
+        return _pushRangeToClean(range);
     }
+    invariant(_metadataInUse.begin() != _activeMetadataTracker);
 
-    return Status::OK();
+    Deletion deletion{ChunkRange(range.getMin().getOwned(), range.getMax().getOwned()), notifn};
+    _activeMetadataTracker->_orphans.emplace_back(std::move(deletion));
+
+    log() << "Scheduling " << _nss.ns() << " range " << redact(range.toString())
+          << " for deletion after all possibly-dependent queries finish";
+
+    return _activeMetadataTracker->_orphans.back().notification;
 }
 
 size_t MetadataManager::numberOfRangesToCleanStillInUse() {
     stdx::lock_guard<stdx::mutex> scopedLock(_managerLock);
-    size_t count = _activeMetadataTracker->orphans ? 1 : 0;
-    count += std::count_if(_metadataInUse.begin(), _metadataInUse.end(), [](auto& tracker) {
-        return bool(tracker->orphans);
-    });
+    size_t count = 0;
+    for (auto& tracker : _metadataInUse) {
+        count += tracker._orphans.size();
+    };
     return count;
 }
 
@@ -507,22 +511,17 @@ size_t MetadataManager::numberOfRangesToClean() {
     return _rangesToClean.size();
 }
 
-MetadataManager::CleanupNotification MetadataManager::trackOrphanedDataCleanup(
-    ChunkRange const& range) {
-
+auto MetadataManager::trackOrphanedDataCleanup(ChunkRange const& range) -> CleanupNotification {
     stdx::unique_lock<stdx::mutex> scopedLock(_managerLock);
-    if (_overlapsInUseCleanups(range))
-        return _notification;
-    return _rangesToClean.overlaps(range);
+    auto overlaps = _overlapsInUseCleanups(range);
+    return overlaps ? overlaps : _rangesToClean.overlaps(range);
 }
 
 // call locked
 bool MetadataManager::_overlapsInUseChunk(ChunkRange const& range) {
-    if (_activeMetadataTracker->metadata->rangeOverlapsChunk(range)) {
-        return true;  // refcount doesn't matter for the active case
-    }
     for (auto& tracker : _metadataInUse) {
-        if (tracker->_usageCounter != 0 && tracker->metadata->rangeOverlapsChunk(range)) {
+        if ((tracker._usageCounter != 0 || &tracker == &_metadataInUse.back()) &&
+            tracker._metadata.rangeOverlapsChunk(range)) {
             return true;
         }
     }
@@ -530,29 +529,21 @@ bool MetadataManager::_overlapsInUseChunk(ChunkRange const& range) {
 }
 
 // call locked
-bool MetadataManager::_overlapsInUseCleanups(ChunkRange const& range) {
-    if (_activeMetadataTracker->orphans && _activeMetadataTracker->orphans->overlapWith(range)) {
-        return true;
-    }
+auto MetadataManager::_overlapsInUseCleanups(ChunkRange const& range) -> CleanupNotification {
     for (auto& tracker : _metadataInUse) {
-        if (tracker->orphans && bool(tracker->orphans->overlapWith(range))) {
-            return true;
+        for (auto& cleanup : tracker._orphans) {
+            if (bool(cleanup.range.overlapWith(range))) {
+                return cleanup.notification;
+            }
         }
     }
-    return false;
-}
-
-// call locked
-void MetadataManager::_notifyInUse() {
-    _notification->set(Status::OK());  // wake up waitForClean
-    _notification = std::make_shared<Notification<Status>>();
+    return nullptr;
 }
 
 boost::optional<KeyRange> MetadataManager::getNextOrphanRange(BSONObj const& from) {
     stdx::unique_lock<stdx::mutex> scopedLock(_managerLock);
-    invariant(_activeMetadataTracker->metadata);
-    return _activeMetadataTracker->metadata->getNextOrphanRange(_receivingChunks, from);
+    invariant(_activeMetadataTracker != Ref());
+    return _activeMetadataTracker->_metadata.getNextOrphanRange(_receivingChunks, from);
 }
-
 
 }  // namespace mongo

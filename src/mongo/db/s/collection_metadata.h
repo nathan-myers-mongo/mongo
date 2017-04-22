@@ -51,20 +51,10 @@ class ChunkType;
  */
 class CollectionMetadata {
 public:
-    /**
-     * The main way to construct CollectionMetadata is through MetadataLoader or clone() methods.
-     */
     CollectionMetadata(const BSONObj& keyPattern,
                        ChunkVersion collectionVersion,
                        ChunkVersion shardVersion,
                        RangeMap shardChunksMap);
-
-    ~CollectionMetadata();
-
-    /**
-     * Returns a new metadata's instance based on 'this's state;
-     */
-    std::unique_ptr<CollectionMetadata> clone() const;
 
     /**
      * Returns true if the document key 'key' is a valid instance of a shard key for this

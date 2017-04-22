@@ -188,10 +188,9 @@ CollectionShardingState* ShardingState::getNS(const std::string& ns, OperationCo
     stdx::lock_guard<stdx::mutex> lk(_mutex);
     CollectionShardingStateMap::iterator it = _collections.find(ns);
     if (it == _collections.end()) {
-        auto inserted =
-            _collections.insert(make_pair(ns,
-                                          stdx::make_unique<CollectionShardingState>(
-                                              opCtx->getServiceContext(), NamespaceString(ns))));
+        auto css = stdx::make_unique<CollectionShardingState>(opCtx->getServiceContext(),
+                                                              NamespaceString(ns));
+        auto inserted = _collections.insert(std::make_pair(ns, std::move(css)));
         invariant(inserted.second);
         it = std::move(inserted.first);
     }
@@ -457,7 +456,7 @@ ChunkVersion ShardingState::_refreshMetadata(OperationContext* opCtx, const Name
                           << " before shard name has been set",
             shardId.isValid());
 
-    auto newCollectionMetadata = [&]() -> std::unique_ptr<CollectionMetadata> {
+    auto newCollectionMetadata = [&]() -> boost::optional<CollectionMetadata> {
         auto const catalogCache = Grid::get(opCtx)->catalogCache();
         catalogCache->invalidateShardedCollection(nss);
 
@@ -465,7 +464,7 @@ ChunkVersion ShardingState::_refreshMetadata(OperationContext* opCtx, const Name
             uassertStatusOK(catalogCache->getCollectionRoutingInfo(opCtx, nss));
         const auto cm = routingInfo.cm();
         if (!cm) {
-            return nullptr;
+            return boost::none;
         }
 
         RangeMap shardChunksMap =
@@ -481,22 +480,21 @@ ChunkVersion ShardingState::_refreshMetadata(OperationContext* opCtx, const Name
                                    CachedChunkInfo(chunk->getMax(), chunk->getLastmod()));
         }
 
-        return stdx::make_unique<CollectionMetadata>(cm->getShardKeyPattern().toBSON(),
-                                                     cm->getVersion(),
-                                                     cm->getVersion(shardId),
-                                                     std::move(shardChunksMap));
+        return CollectionMetadata{cm->getShardKeyPattern().toBSON(),
+                                  cm->getVersion(),
+                                  cm->getVersion(shardId),
+                                  std::move(shardChunksMap)};
     }();
 
     // Exclusive collection lock needed since we're now changing the metadata
     AutoGetCollection autoColl(opCtx, nss, MODE_IX, MODE_X);
 
     auto css = CollectionShardingState::get(opCtx, nss);
-    css->refreshMetadata(opCtx, std::move(newCollectionMetadata));
-
-    if (!css->getMetadata()) {
+    if (!newCollectionMetadata) {
+        css->markNotShardedAtStepdown();
         return ChunkVersion::UNSHARDED();
     }
-
+    css->refreshMetadata(opCtx, std::move(*newCollectionMetadata));
     return css->getMetadata()->getShardVersion();
 }
 

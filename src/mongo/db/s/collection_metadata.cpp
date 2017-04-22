@@ -65,8 +65,6 @@ CollectionMetadata::CollectionMetadata(const BSONObj& keyPattern,
     _buildRangesMap();
 }
 
-CollectionMetadata::~CollectionMetadata() = default;
-
 void CollectionMetadata::_buildRangesMap() {
     _rangesMap.clear();
 
@@ -101,11 +99,6 @@ void CollectionMetadata::_buildRangesMap() {
     invariant(!max.isEmpty());
 
     _rangesMap.emplace(min, CachedChunkInfo(max, ChunkVersion::IGNORED()));
-}
-
-std::unique_ptr<CollectionMetadata> CollectionMetadata::clone() const {
-    return stdx::make_unique<CollectionMetadata>(
-        _shardKeyPattern.toBSON(), getCollVersion(), getShardVersion(), getChunks());
 }
 
 bool CollectionMetadata::keyBelongsToMe(const BSONObj& key) const {

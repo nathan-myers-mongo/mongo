@@ -394,7 +394,10 @@ Status MigrationSourceManager::commitChunkMetadataOnConfig(OperationContext* opC
 
         // Schedule clearing out orphaned documents when they are no longer in active use.
         const auto orphans = ChunkRange(_args.getMinKey(), _args.getMaxKey());
-        uassertStatusOK(css->cleanUpRange(orphans));
+        auto notification = css->cleanUpRange(orphans);
+        if (*notification) {  // If it fails immediately, report that, but don't wait.
+            return notification->get(opCtx);
+        };
 
         // Migration succeeded
         log() << "Migration succeeded and updated collection version to "
@@ -402,7 +405,7 @@ Status MigrationSourceManager::commitChunkMetadataOnConfig(OperationContext* opC
     } else {
         AutoGetCollection autoColl(opCtx, getNss(), MODE_IX, MODE_X);
 
-        CollectionShardingState::get(opCtx, getNss())->refreshMetadata(opCtx, nullptr);
+        CollectionShardingState::get(opCtx, getNss())->markNotShardedAtStepdown();
 
         log() << "Failed to refresh metadata after a failed commit attempt. Metadata was cleared "
                  "so it will get a full refresh when accessed again"

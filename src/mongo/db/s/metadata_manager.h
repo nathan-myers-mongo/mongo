@@ -49,11 +49,16 @@ class ScopedCollectionMetadata;
 class MetadataManager {
     MONGO_DISALLOW_COPYING(MetadataManager);
 
+    struct Tracker;  // defined in the .cpp file
+
 public:
-    struct Tracker;
-    using Ref = std::list<Tracker>::const_iterator;
-     
-    MetadataManager(ServiceContext*, NamespaceString nss, executor::TaskExecutor* rangeDeleter);
+    using CleanupNotification = CollectionRangeDeleter::DeleteNotification;
+    using Ref = std::list<Tracker>::iterator;
+
+    MetadataManager(ServiceContext*,
+                    NamespaceString nss,
+                    std::shared_ptr<MetadataManager> const& self,
+                    executor::TaskExecutor* rangeDeleter);
     ~MetadataManager();
 
     /**
@@ -72,10 +77,12 @@ public:
      */
     size_t numberOfMetadataSnapshots();
 
+    void unshard();
+
     /**
      * Uses the contents of the specified metadata as a way to purge any pending chunks.
      */
-    void refreshActiveMetadata(std::unique_ptr<CollectionMetadata> newMetadata);
+    void refreshActiveMetadata(CollectionMetadata newMetadata);
 
     void toBSONPending(BSONArrayBuilder& bb) const;
 
@@ -95,7 +102,7 @@ public:
      * If no running queries can depend on documents in the range, schedules any such documents for
      * immediate cleanup. Otherwise, returns false.
      */
-    bool beginReceive(ChunkRange const& range);
+    CleanupNotification beginReceive(ChunkRange const& range);
 
     /**
      * Removes the range from the pending list, and schedules any documents in the range for
@@ -111,8 +118,12 @@ public:
      *
      * Must be called with the collection locked for writing.  To monitor completion, use
      * trackOrphanedDataCleanup or CollectionShardingState::waitForClean.
+     *
+     * A note about naming: this function's purpose is to "clean up a range", and it returns a
+     * "cleanup notification".  "Clean" is a part of a verb phrase in former case, part of a
+     * one-word noun in the latter. The capitalization is consistent with standard grammar.
      */
-    Status cleanUpRange(ChunkRange const& range);
+    CleanupNotification cleanUpRange(ChunkRange const& range);
 
     /**
      * Returns the number of ranges scheduled to be cleaned, exclusive of such ranges that might
@@ -128,7 +139,6 @@ public:
      */
     size_t numberOfRangesToCleanStillInUse();
 
-    using CleanupNotification = CollectionRangeDeleter::DeleteNotification;
     /**
      * Reports whether the argument range is still scheduled for deletion. If not, returns nullptr.
      * Otherwise, returns a notification n such that n->get(opCtx) will wake when deletion of a
@@ -138,7 +148,13 @@ public:
 
     boost::optional<KeyRange> getNextOrphanRange(BSONObj const& from);
 
+    using Deletion = CollectionRangeDeleter::Deletion;
+
 private:
+    /**
+     * Disconnect from the tracker, possibly triggering GC of unused CollectionMetadata.
+     */
+    void _clear();
 
     /**
      * Retires any metadata that has fallen out of use, and pushes any orphan ranges found in them
@@ -161,12 +177,12 @@ private:
     bool _overlapsInUseChunk(ChunkRange const& range);
 
     /**
-     * Returns true if any range (possibly) still in use, but scheduled for cleanup, overlaps
-     * the argument range.
+     * Returns the notification for the range (possibly) still in use, but scheduled for cleanup,
+     * that overlaps the argument range, if any.  Otherwise, it returns nullptr.
      *
      * Must be called locked.
      */
-    bool _overlapsInUseCleanups(ChunkRange const& range);
+    CleanupNotification _overlapsInUseCleanups(ChunkRange const& range);
 
     /**
      * Deletes ranges, in background, until done, normally using a task executor attached to the
@@ -178,30 +194,31 @@ private:
     static void _scheduleCleanup(executor::TaskExecutor*, NamespaceString nss);
 
     /**
-     * Adds the range to the list of ranges scheduled for immediate deletion, and schedules a
-     * a background task to perform the work.
+     * Copies the argument range to the list of ranges scheduled for immediate deletion, and
+     * schedules a background task to perform the work.
      *
      * Must be called locked.
      */
-    void _pushRangeToClean(ChunkRange const& range);
+    CleanupNotification _pushRangeToClean(ChunkRange const& range);
 
     /**
-     * Adds a range from the receiving map, so getNextOrphanRange will skip ranges migrating in.
+     * Splices the argument list elements to the list of ranges scheduled for immediate deletion,
+     * and schedules a background task to perform the work.
+     *
+     * Must be called locked.
+     */
+    void _pushListToClean(std::list<Deletion> ranges);
+
+    /**
+     * Adds range to the receiving map. getNextOrphanRange will skip ranges that are migrating in.
      */
     void _addToReceiving(ChunkRange const& range);
 
     /**
-     * Removes a range from the receiving map after a migration failure. range.minKey() must
-     * exactly match an element of _receivingChunks.
+     * Removes a range from the receiving map after a migration failure. The range must exactly
+     * match an element of _receivingChunks.
      */
     void _removeFromReceiving(ChunkRange const& range);
-
-    /**
-     * Wakes up any clients waiting on a range to leave _metadataInUse
-     *
-     * Must be called locked.
-     */
-    void _notifyInUse();
 
     // data members
 
@@ -227,10 +244,6 @@ private:
 
     // Chunk ranges being migrated into to the shard. Indexed by the min key of the range.
     RangeMap _receivingChunks;
-
-    // Clients can sleep on copies of _notification while waiting for their orphan ranges to fall
-    // out of use.
-    std::shared_ptr<Notification<Status>> _notification;
 
     // The background task that deletes documents from orphaned chunk ranges.
     executor::TaskExecutor* const _executor;
@@ -285,15 +298,12 @@ private:
      *
      * Must be called with tracker->manager locked.
      */
-    ScopedCollectionMetadata(std::shared_ptr<MetadataManager>, Ref tracker);
+    ScopedCollectionMetadata(std::shared_ptr<MetadataManager>, MetadataManager::Ref tracker);
 
-    /**
-     * Disconnect from the tracker, possibly triggering GC of unused CollectionMetadata.
-     */
     void _clear();
 
     MetadataManager::Ref _tracker{};
-    std::shared_ptr<MetadataManager> manager{nullptr};
+    std::shared_ptr<MetadataManager> _manager{nullptr};
 
     friend ScopedCollectionMetadata MetadataManager::getActiveMetadata();  // uses our private ctor
 };

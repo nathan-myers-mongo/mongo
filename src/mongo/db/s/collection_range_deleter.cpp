@@ -102,9 +102,9 @@ bool CollectionRangeDeleter::cleanUpNextRange(OperationContext* opCtx,
             // scheduled to do deletions on, or another one with the same name. But it doesn't
             // matter: if it has deletions scheduled, now is as good a time as any to do them.
             auto self = rangeDeleterForTestOnly ? rangeDeleterForTestOnly
-                                                : &css->_metadataManager._rangesToClean;
+                                                : &css->_metadataManager->_rangesToClean;
             {
-                stdx::lock_guard<stdx::mutex> scopedLock(css->_metadataManager._managerLock);
+                stdx::lock_guard<stdx::mutex> scopedLock(css->_metadataManager->_managerLock);
                 if (self->isEmpty())
                     return false;
 
@@ -122,7 +122,7 @@ bool CollectionRangeDeleter::cleanUpNextRange(OperationContext* opCtx,
             }
 
             if (!wrote.isOK() || wrote.getValue() == 0) {
-                stdx::lock_guard<stdx::mutex> scopedLock(css->_metadataManager._managerLock);
+                stdx::lock_guard<stdx::mutex> scopedLock(css->_metadataManager->_managerLock);
                 self->_pop(wrote.getStatus());
                 return true;
             }
@@ -244,11 +244,10 @@ auto CollectionRangeDeleter::overlaps(ChunkRange const& range) const -> DeleteNo
     return it != _orphans.rend() ? it->notification : DeleteNotification();
 }
 
-void CollectionRangeDeleter::add(ChunkRange const& range) {
-    // We ignore the case of overlapping, or even equal, ranges.
-    // Deleting overlapping ranges is quick.
-    _orphans.emplace_back(Deletion{ChunkRange(range.getMin().getOwned(), range.getMax().getOwned()),
-                                   std::make_shared<Notification<Status>>()});
+bool CollectionRangeDeleter::add(std::list<Deletion> ranges) {
+    bool wasEmpty = _orphans.empty();
+    _orphans.splice(_orphans.end(), ranges);
+    return wasEmpty;
 }
 
 void CollectionRangeDeleter::append(BSONObjBuilder* builder) const {

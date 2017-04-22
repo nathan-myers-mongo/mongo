@@ -59,6 +59,12 @@ class CollectionShardingState {
 
 public:
     /**
+     * A shared_ptr<Notification<Status>>, signaled when a particular range deletion request
+     * completes or fails.
+     */
+    using CleanupNotification = MetadataManager::CleanupNotification;
+
+    /**
      * Instantiates a new per-collection sharding state as unsharded.
      */
     CollectionShardingState(ServiceContext* sc, NamespaceString nss);
@@ -97,7 +103,7 @@ public:
      * BSON output of the pending metadata into a BSONArray
      */
     void toBSONPending(BSONArrayBuilder& bb) const {
-        _metadataManager.toBSONPending(bb);
+        _metadataManager->toBSONPending(bb);
     }
 
     /**
@@ -107,7 +113,7 @@ public:
      *
      * Must always be called with an exclusive collection lock.
      */
-    void refreshMetadata(OperationContext* opCtx, std::unique_ptr<CollectionMetadata> newMetadata);
+    void refreshMetadata(OperationContext* opCtx, CollectionMetadata newMetadata);
 
     /**
      * Marks the collection as not sharded at stepdown time so that no filtering will occur for
@@ -118,9 +124,10 @@ public:
     /**
      * Schedules any documents in the range for immediate cleanup iff no running queries can depend
      * on them, and adds the range to the list of pending ranges. Otherwise, returns false.  Does
-     * not block.
+     * not block.  Call get() on the return value to wait for the deletion to complete or fail.
+     * After that, call waitForClean to ensure no other deletions are pending for the range.
      */
-    bool beginReceive(ChunkRange const& range);
+    auto beginReceive(ChunkRange const& range) -> CleanupNotification;
 
     /*
      * Removes the range from the list of pending ranges, and schedules any documents in the range
@@ -130,10 +137,12 @@ public:
 
     /**
      * Schedules documents in the range for cleanup after any running queries that may depend on
-     * them have terminated.  Does not block. Use waitForClean to block pending completion.
-     * Fails if range overlaps any current local shard chunk.
+     * them have terminated.  Does not block. Fails if range overlaps any current local shard chunk.
+     * Call `result->get(opCtx)` on the return value `result` to wait for the deletion to complete
+     * or fail. If that succeeds, call waitForClean to ensure no other deletions are pending for the
+     * range.
      */
-    Status cleanUpRange(ChunkRange const& range);
+    auto cleanUpRange(ChunkRange const& range) -> CleanupNotification;
 
     /**
      * Returns the active migration source manager, if one is available.
@@ -177,7 +186,6 @@ public:
      */
     static Status waitForClean(OperationContext*, NamespaceString, OID const& epoch, ChunkRange);
 
-    using CleanupNotification = MetadataManager::CleanupNotification;
     /**
      * Reports whether any part of the argument range is still scheduled for deletion. If not,
      * returns nullptr. Otherwise, returns a notification n such that n->get(opCtx) will wake when
@@ -229,7 +237,7 @@ private:
     const NamespaceString _nss;
 
     // Contains all the metadata associated with this collection.
-    MetadataManager _metadataManager;
+    std::shared_ptr<MetadataManager> _metadataManager;
 
     // If this collection is serving as a source shard for chunk migration, this value will be
     // non-null. To write this value there needs to be X-lock on the collection in order to

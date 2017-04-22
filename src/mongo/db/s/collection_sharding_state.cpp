@@ -86,7 +86,8 @@ private:
 
 CollectionShardingState::CollectionShardingState(ServiceContext* sc, NamespaceString nss)
     : _nss(std::move(nss)),
-      _metadataManager{sc, _nss, ShardingState::get(sc)->getRangeDeleterTaskExecutor()} {}
+      _metadataManager(std::make_shared<MetadataManager>(
+          sc, _nss, _metadataManager, ShardingState::get(sc)->getRangeDeleterTaskExecutor())) {}
 
 CollectionShardingState::~CollectionShardingState() {
     invariant(!_sourceMgr);
@@ -107,30 +108,30 @@ CollectionShardingState* CollectionShardingState::get(OperationContext* opCtx,
 }
 
 ScopedCollectionMetadata CollectionShardingState::getMetadata() {
-    return _metadataManager.getActiveMetadata();
+    return _metadataManager->getActiveMetadata();
 }
 
 void CollectionShardingState::refreshMetadata(OperationContext* opCtx,
-                                              std::unique_ptr<CollectionMetadata> newMetadata) {
+                                              CollectionMetadata newMetadata) {
     invariant(opCtx->lockState()->isCollectionLockedForMode(_nss.ns(), MODE_X));
 
-    _metadataManager.refreshActiveMetadata(std::move(newMetadata));
+    _metadataManager->refreshActiveMetadata(std::move(newMetadata));
 }
 
 void CollectionShardingState::markNotShardedAtStepdown() {
-    _metadataManager.refreshActiveMetadata(nullptr);
+    _metadataManager->unshard();
 }
 
-bool CollectionShardingState::beginReceive(ChunkRange const& range) {
-    return _metadataManager.beginReceive(range);
+auto CollectionShardingState::beginReceive(ChunkRange const& range) -> CleanupNotification {
+    return _metadataManager->beginReceive(range);
 }
 
 void CollectionShardingState::forgetReceive(const ChunkRange& range) {
-    _metadataManager.forgetReceive(range);
+    _metadataManager->forgetReceive(range);
 }
 
-Status CollectionShardingState::cleanUpRange(ChunkRange const& range) {
-    return _metadataManager.cleanUpRange(range);
+auto CollectionShardingState::cleanUpRange(ChunkRange const& range) -> CleanupNotification {
+    return _metadataManager->cleanUpRange(range);
 }
 
 MigrationSourceManager* CollectionShardingState::getMigrationSourceManager() {
@@ -194,12 +195,12 @@ Status CollectionShardingState::waitForClean(OperationContext* opCtx,
             // First, see if collection was dropped.
             auto css = CollectionShardingState::get(opCtx, nss);
             {
-                auto metadata = css->_metadataManager.getActiveMetadata();
+                auto metadata = css->_metadataManager->getActiveMetadata();
                 if (!metadata || metadata->getCollVersion().epoch() != epoch) {
                     return {ErrorCodes::StaleShardVersion, "Collection being migrated was dropped"};
                 }
             }  // drop metadata
-            stillScheduled = css->_metadataManager.trackOrphanedDataCleanup(orphanRange);
+            stillScheduled = css->_metadataManager->trackOrphanedDataCleanup(orphanRange);
             if (stillScheduled == nullptr) {
                 log() << "Finished deleting " << nss.ns() << " range "
                       << redact(orphanRange.toString());
@@ -221,7 +222,7 @@ Status CollectionShardingState::waitForClean(OperationContext* opCtx,
 }
 
 boost::optional<KeyRange> CollectionShardingState::getNextOrphanRange(BSONObj const& from) {
-    return _metadataManager.getNextOrphanRange(from);
+    return _metadataManager->getNextOrphanRange(from);
 }
 
 bool CollectionShardingState::isDocumentInMigratingChunk(OperationContext* opCtx,

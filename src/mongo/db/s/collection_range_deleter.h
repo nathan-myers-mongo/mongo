@@ -43,6 +43,13 @@ class CollectionRangeDeleter {
     MONGO_DISALLOW_COPYING(CollectionRangeDeleter);
 
 public:
+    using DeleteNotification = std::shared_ptr<Notification<Status>>;
+
+    struct Deletion {
+        ChunkRange const range;
+        DeleteNotification const notification;
+    };
+
     //
     // All of the following members must be called only while the containing MetadataManager's lock
     // is held (or in its destructor), except cleanUpNextRange.
@@ -54,12 +61,11 @@ public:
     CollectionRangeDeleter() = default;
     ~CollectionRangeDeleter();
 
-    using DeleteNotification = std::shared_ptr<Notification<Status>>;
-
     /**
-     * Adds a new range to be cleaned up by the cleaner thread.
+     * Splices range's elements to the list to be cleaned up by the deleter thread. Returns true
+     * if the list was empty, so the caller knows to schedule a deletion task.
      */
-    void add(const ChunkRange& range);
+    bool add(std::list<Deletion> ranges);
 
     /**
      * Reports whether the argument range overlaps any of the ranges to clean.  If there is overlap,
@@ -131,10 +137,6 @@ private:
      * Ranges scheduled for deletion.  The front of the list will be in active process of deletion.
      * As each range is completed, its notification is signaled before it is popped.
      */
-    struct Deletion {
-        ChunkRange const range;
-        DeleteNotification const notification;
-    };
     std::list<Deletion> _orphans;
 };
 
