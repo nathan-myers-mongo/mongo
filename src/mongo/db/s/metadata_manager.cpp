@@ -157,7 +157,9 @@ void MetadataManager::_clear() {
                   " or became unsharded"};
     for (auto& tracker : _metadataInUse) {
         for (auto& deletion : tracker._orphans) {
-            deletion.notification->set(status);
+            if (!*deletion.notification) {  // unit test might have triggered it already...
+                deletion.notification->set(status);
+            }
         }
     }
     _activeMetadataTracker = Ref();
