@@ -147,8 +147,8 @@ MetadataManager::~MetadataManager() {
     _clear();
 }
 
+// call locked, except on destruction
 void MetadataManager::_clear() {
-    stdx::lock_guard<stdx::mutex> scopedLock(_managerLock);
     std::list<Tracker> inUse;
     // drain any threads that might remove _metadataInUse entries, push to deleter
     inUse = std::move(_metadataInUse);
@@ -196,7 +196,6 @@ void MetadataManager::unshard() {
     log() << "Marking collection " << _nss.ns() << " with "
           << _activeMetadataTracker->_metadata.toStringBasic() << " as no longer sharded";
     _clear();
-    return;
 }
 
 void MetadataManager::refreshActiveMetadata(CollectionMetadata remoteMetadata) {
@@ -226,9 +225,7 @@ void MetadataManager::refreshActiveMetadata(CollectionMetadata remoteMetadata) {
               << _activeMetadataTracker->_metadata.toStringBasic() << " to "
               << remoteMetadata.toStringBasic() << " due to epoch change";
 
-        _receivingChunks.clear();
-        _rangesToClean.clear(Status::OK());
-        _metadataInUse.clear();
+        _clear();
         _setActiveMetadata_inlock(std::move(remoteMetadata));
         return;
     }
@@ -280,8 +277,8 @@ void MetadataManager::_retireExpiredMetadata() {
     // most reference counts.
     dassert(!_metadataInUse.empty());
     bool notify = false;
-    auto& tracker = _metadataInUse.front();
-    while (tracker._usageCounter == 0) {
+    while (_metadataInUse.front()._usageCounter == 0) {
+        auto& tracker = _metadataInUse.front();
         if (!tracker._orphans.empty()) {
             notify = true;
             log() << "Queries possibly dependent on " << _nss.ns() << " range(s) finished;"
@@ -326,7 +323,7 @@ void ScopedCollectionMetadata::_clear() {
     if (_manager) {
         stdx::lock_guard<stdx::mutex> managerLock(_manager->_managerLock);
         dassert(_tracker->_usageCounter != 0);
-        if (--_tracker->_usageCounter == 0 && !_manager->_shuttingDown) {
+        if (--_tracker->_usageCounter == 0) {
             _manager->_retireExpiredMetadata();
         }
     }
@@ -513,14 +510,16 @@ size_t MetadataManager::numberOfRangesToClean() {
     return _rangesToClean.size();
 }
 
-auto MetadataManager::trackOrphanedDataCleanup(ChunkRange const& range) -> CleanupNotification {
+auto MetadataManager::trackOrphanedDataCleanup(ChunkRange const& range)
+    -> boost::optional<CleanupNotification> {
+
     stdx::unique_lock<stdx::mutex> scopedLock(_managerLock);
     auto overlaps = _overlapsInUseCleanups(range);
     return overlaps ? overlaps : _rangesToClean.overlaps(range);
 }
 
 // call locked
-bool MetadataManager::_overlapsInUseChunk(ChunkRange const& range) {
+bool MetadataManager::_overlapsInUseChunk(ChunkRange const& range) const {
     for (auto& tracker : _metadataInUse) {
         if ((tracker._usageCounter != 0 || &tracker == &_metadataInUse.back()) &&
             tracker._metadata.rangeOverlapsChunk(range)) {
@@ -531,15 +530,19 @@ bool MetadataManager::_overlapsInUseChunk(ChunkRange const& range) {
 }
 
 // call locked
-auto MetadataManager::_overlapsInUseCleanups(ChunkRange const& range) -> CleanupNotification {
-    for (auto& tracker : _metadataInUse) {
-        for (auto& cleanup : tracker._orphans) {
-            if (bool(cleanup.range.overlapWith(range))) {
-                return cleanup.notification;
+auto MetadataManager::_overlapsInUseCleanups(ChunkRange const& range) const
+    -> boost::optional<CleanupNotification> {
+    // search newest to oldest
+    auto tracker = _metadataInUse.crbegin(), et = _metadataInUse.crend();
+    for (; tracker != et; ++tracker) {
+        auto cleanup = tracker->_orphans.crbegin(), ec = tracker->_orphans.crend();
+        for (; cleanup != ec; ++cleanup) {
+            if (bool(cleanup->range.overlapWith(range))) {
+                return cleanup->notification;
             }
         }
     }
-    return nullptr;
+    return boost::none;
 }
 
 boost::optional<KeyRange> MetadataManager::getNextOrphanRange(BSONObj const& from) {

@@ -69,14 +69,13 @@ public:
 
     /**
      * Reports whether the argument range overlaps any of the ranges to clean.  If there is overlap,
-     * it returns a notification that will be completed when the currently newest overlapping
-     * range is no longer scheduled.  Its value indicates whether it has been successfully removed.
-     * If there is no overlap, the result is nullptr.  After a successful removal, the caller
-     * should call again to ensure no other range overlaps the argument.
+     * it returns a notification that will be signaled when the currently newest overlapping range
+     * completes or fails. If there is no overlap, the result is boost::none.  After a successful
+     * removal, the caller should call again to ensure no other range overlaps the argument.
      * (See CollectionShardingState::waitForClean and MetadataManager::trackOrphanedDataCleanup for
      * an example use.)
      */
-    DeleteNotification overlaps(ChunkRange const& range) const;
+    boost::optional<DeleteNotification> overlaps(ChunkRange const& range) const;
 
     /**
      * Reports the number of ranges remaining to be cleaned up.

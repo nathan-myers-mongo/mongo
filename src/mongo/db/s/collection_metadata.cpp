@@ -159,7 +159,7 @@ bool CollectionMetadata::getDifferentChunk(const BSONObj& chunkMinKey,
     return false;
 }
 
-Status CollectionMetadata::checkChunkIsValid(const ChunkType& chunk) {
+Status CollectionMetadata::checkChunkIsValid(const ChunkType& chunk) const {
     ChunkType existingChunk;
 
     if (!getNextChunk(chunk.getMin(), &existingChunk)) {
@@ -181,7 +181,7 @@ Status CollectionMetadata::checkChunkIsValid(const ChunkType& chunk) {
     return Status::OK();
 }
 
-bool CollectionMetadata::rangeOverlapsChunk(ChunkRange const& range) {
+bool CollectionMetadata::rangeOverlapsChunk(ChunkRange const& range) const {
     return rangeMapOverlaps(_rangesMap, range.getMin(), range.getMax());
 }
 

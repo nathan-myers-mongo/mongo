@@ -187,13 +187,14 @@ public:
     static Status waitForClean(OperationContext*, NamespaceString, OID const& epoch, ChunkRange);
 
     /**
-     * Reports whether any part of the argument range is still scheduled for deletion. If not,
-     * returns nullptr. Otherwise, returns a notification n such that n->get(opCtx) will wake when
-     * deletion of a range (possibly the one of interest) is completed.  This should be called
-     * again after each wakeup until it returns nullptr, because there can be more than one range
-     * scheduled for deletion that overlaps its argument.
+     * Reports whether any range still scheduled for deletion overlaps the argument range. If so,
+     * it returns a notification n such that n->get(opCtx) will wake when the newest overlapping
+     * range's deletion (possibly the one of interest) completes or fails. This should be called
+     * again after each wakeup until it returns boost::none, because there can be more than one
+     * range scheduled for deletion that overlaps its argument.
      */
-    CleanupNotification trackOrphanedDataCleanup(ChunkRange const& range) const;
+    auto trackOrphanedDataCleanup(ChunkRange const& range) const
+        -> boost::optional<CleanupNotification>;
 
     /**
      * Returns a range _not_ owned by this shard that starts no lower than the specified

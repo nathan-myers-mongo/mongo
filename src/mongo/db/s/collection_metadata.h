@@ -85,12 +85,12 @@ public:
     /**
      * Validates that the passed-in chunk's bounds exactly match a chunk in the metadata cache.
      */
-    Status checkChunkIsValid(const ChunkType& chunk);
+    Status checkChunkIsValid(const ChunkType& chunk) const;
 
     /**
      * Returns true if the argument range overlaps any chunk.
      */
-    bool rangeOverlapsChunk(ChunkRange const& range);
+    bool rangeOverlapsChunk(ChunkRange const& range) const;
 
     /**
      * Given a key in the shard key range, get the next range which overlaps or is greater than

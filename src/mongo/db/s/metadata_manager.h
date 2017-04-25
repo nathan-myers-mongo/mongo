@@ -140,11 +140,12 @@ public:
     size_t numberOfRangesToCleanStillInUse();
 
     /**
-     * Reports whether the argument range is still scheduled for deletion. If not, returns nullptr.
-     * Otherwise, returns a notification n such that n->get(opCtx) will wake when deletion of a
-     * range (possibly the one of interest) is completed.
+     * Reports whether any range still scheduled for deletion overlaps the argument range. If so,
+     * returns a notification n such that n->get(opCtx) will wake when the newest overlapping
+     * range's deletion (possibly the one of interest) completes or fails.
      */
-    CleanupNotification trackOrphanedDataCleanup(ChunkRange const& orphans);
+    auto trackOrphanedDataCleanup(ChunkRange const& orphans) 
+        -> boost::optional<CleanupNotification>;
 
     boost::optional<KeyRange> getNextOrphanRange(BSONObj const& from);
 
@@ -174,7 +175,7 @@ private:
      * must be called locked.
      */
 
-    bool _overlapsInUseChunk(ChunkRange const& range);
+    bool _overlapsInUseChunk(ChunkRange const& range) const;
 
     /**
      * Returns the notification for the range (possibly) still in use, but scheduled for cleanup,
@@ -182,7 +183,7 @@ private:
      *
      * Must be called locked.
      */
-    CleanupNotification _overlapsInUseCleanups(ChunkRange const& range);
+    boost::optional<CleanupNotification> _overlapsInUseCleanups(ChunkRange const& range) const;
 
     /**
      * Deletes ranges, in background, until done, normally using a task executor attached to the

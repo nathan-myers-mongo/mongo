@@ -122,6 +122,10 @@ bool CollectionRangeDeleter::cleanUpNextRange(OperationContext* opCtx,
             }
 
             if (!wrote.isOK() || wrote.getValue() == 0) {
+                if (wrote.isOK()) {
+                    log() << "No documents remain to delete in " << nss << " range "
+                          << redact(range->toString());
+                }
                 stdx::lock_guard<stdx::mutex> scopedLock(css->_metadataManager->_managerLock);
                 self->_pop(wrote.getStatus());
                 return true;
@@ -216,9 +220,10 @@ StatusWith<int> CollectionRangeDeleter::_doDeletion(OperationContext* opCtx,
         }
         if (state == PlanExecutor::FAILURE || state == PlanExecutor::DEAD) {
             warning(LogComponent::kSharding)
-                << PlanExecutor::statestr(state) << " - cursor error while trying to delete " << min
-                << " to " << max << " in " << nss << ": " << WorkingSetCommon::toStatusString(obj)
-                << ", stats: " << Explain::getWinningPlanStats(exec.get());
+                << PlanExecutor::statestr(state) << " - cursor error while trying to delete range ("
+                << redact(min.toString()) << "," << redact(max.toString()) << "] in " << nss << ": "
+                << WorkingSetCommon::toStatusString(obj) << ", stats: "
+                << Explain::getWinningPlanStats(exec.get());
             break;
         }
         invariant(PlanExecutor::ADVANCED == state);
@@ -236,12 +241,16 @@ StatusWith<int> CollectionRangeDeleter::_doDeletion(OperationContext* opCtx,
     return numDeleted;
 }
 
-auto CollectionRangeDeleter::overlaps(ChunkRange const& range) const -> DeleteNotification {
+auto CollectionRangeDeleter::overlaps(ChunkRange const& range) const
+    -> boost::optional<DeleteNotification>{
     // start search with newest entries by using reverse iterators
     auto it = find_if(_orphans.rbegin(), _orphans.rend(), [&](auto& cleanee) {
         return bool(cleanee.range.overlapWith(range));
     });
-    return it != _orphans.rend() ? it->notification : DeleteNotification();
+    if (it == _orphans.rend()) {
+        return boost::none;
+    }
+    return it->notification;
 }
 
 bool CollectionRangeDeleter::add(std::list<Deletion> ranges) {

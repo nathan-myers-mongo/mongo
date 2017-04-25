@@ -189,7 +189,7 @@ Status CollectionShardingState::waitForClean(OperationContext* opCtx,
                                              OID const& epoch,
                                              ChunkRange orphanRange) {
     do {
-        auto stillScheduled = CollectionShardingState::CleanupNotification(nullptr);
+        auto stillScheduled = boost::optional<CollectionShardingState::CleanupNotification>();
         {
             AutoGetCollection autoColl(opCtx, nss, MODE_IX);
             // First, see if collection was dropped.
@@ -201,25 +201,29 @@ Status CollectionShardingState::waitForClean(OperationContext* opCtx,
                 }
             }  // drop metadata
             stillScheduled = css->_metadataManager->trackOrphanedDataCleanup(orphanRange);
-            if (stillScheduled == nullptr) {
-                log() << "Finished deleting " << nss.ns() << " range "
-                      << redact(orphanRange.toString());
+            if (!stillScheduled) {
+                log() << "No part of " << nss.ns() << " range " << redact(orphanRange.toString())
+                      << " is still scheduled for deletion.";
                 return Status::OK();
             }
         }  // drop collection lock
 
         log() << "Waiting for deletion of " << nss.ns() << " range " << orphanRange;
-        Status result = stillScheduled->get(opCtx);
+        Status result = (*stillScheduled)->get(opCtx);
         if (!result.isOK()) {
             return {result.code(),
                     str::stream() << "Failed to delete orphaned " << nss.ns() << " range "
-                                  << redact(orphanRange.toString())
-                                  << ": "
-                                  << redact(result.reason())};
+                                  << orphanRange.toString() << ": " << result.reason()};
         }
     } while (true);
     MONGO_UNREACHABLE;
 }
+
+auto CollectionShardingState::trackOrphanedDataCleanup(ChunkRange const& range) const
+    -> boost::optional<CleanupNotification> {
+    return _metadataManager->trackOrphanedDataCleanup(range);
+}
+
 
 boost::optional<KeyRange> CollectionShardingState::getNextOrphanRange(BSONObj const& from) {
     return _metadataManager->getNextOrphanRange(from);

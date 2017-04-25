@@ -145,6 +145,43 @@ protected:
             *scopedMetadata1.getMetadata(), BSON("key" << 0), BSON("key" << 20), newVersion);
         manager->refreshActiveMetadata(std::move(cm2));
     }
+
+    void addTwoChunks(MetadataManager* manager, ChunkRange const& cr1, ChunkRange const& cr2) {
+        ScopedCollectionMetadata scopedMetadata1 = manager->getActiveMetadata();
+
+        ChunkVersion newVersion = scopedMetadata1->getCollVersion();
+        newVersion.incMajor();
+        CollectionMetadata cm1 = cloneMetadataPlusChunk(
+            *scopedMetadata1.getMetadata(), cr1.getMin(), cr1.getMax(), newVersion);
+        newVersion.incMajor();
+        CollectionMetadata cm2 = cloneMetadataPlusChunk(
+            cm1, cr2.getMin(), cr2.getMax(), newVersion);
+        manager->refreshActiveMetadata(std::move(cm2));
+    }
+
+    static CollectionMetadata cloneMetadataMinusChunk(const CollectionMetadata& metadata,
+                                                      const ChunkRange& range,
+                                                      const ChunkVersion& chunkVersion) {
+        invariant(chunkVersion.isSet());
+        invariant(chunkVersion > metadata.getCollVersion());
+        invariant(rangeMapOverlaps(metadata.getChunks(), range.getMin(), range.getMax()));
+
+        auto chunksMap = metadata.getChunks();
+        chunksMap.erase(range.getMin());
+
+        return CollectionMetadata(
+            metadata.getKeyPattern(), chunkVersion, chunkVersion, std::move(chunksMap));
+    }
+
+    void removeOneChunk(MetadataManager* manager, ChunkRange const& range) {
+        ScopedCollectionMetadata scopedMetadata1 = manager->getActiveMetadata();
+
+        ChunkVersion newVersion = scopedMetadata1->getCollVersion();
+        newVersion.incMajor();
+        CollectionMetadata cm2 = cloneMetadataMinusChunk(
+            *scopedMetadata1.getMetadata(), range, newVersion);
+        manager->refreshActiveMetadata(std::move(cm2));
+    }
 };
 
 TEST_F(MetadataManagerTest, SetAndGetActiveMetadata) {
@@ -193,44 +230,75 @@ TEST_F(MetadataManagerTest, AddRangeNotificationsBlockAndYield) {
     auto notification1 = manager->cleanUpRange(cr1);
     ASSERT(notification1.get() != nullptr && !bool(*notification1));
     ASSERT_EQ(manager->numberOfRangesToClean(), 1UL);
-    auto notification2 = manager->trackOrphanedDataCleanup(cr1);
-    ASSERT(notification2.get() != nullptr && !bool(*notification2));
-    ASSERT_EQ(notification1, notification2);
+    auto optNotification2 = manager->trackOrphanedDataCleanup(cr1);
+    ASSERT(optNotification2 && !bool(**optNotification2));  // not triggered yet
+    ASSERT_EQ(notification1, *optNotification2);
     notification1->set(Status::OK());
-    ASSERT(bool(*notification2));
-    ASSERT_OK(notification2->get(operationContext()));
+    ASSERT_EQ(manager->numberOfRangesToClean(), 1UL);
+    ASSERT_OK((*optNotification2)->get(operationContext()));
 }
 
 TEST_F(MetadataManagerTest, NotificationBlocksUntilDeletion) {
-    ChunkRange cr1(BSON("key" << 20), BSON("key" << 30));
+    ChunkRange cr1(BSON("key" << 0), BSON("key" << 10));
+    ChunkRange cr2(BSON("key" << 50), BSON("key" << 60));
+    ChunkRange cr3(BSON("key" << 80), BSON("key" << 90));
     std::shared_ptr<MetadataManager> manager =
         std::make_shared<MetadataManager>(getServiceContext(), kNss, manager, executor());
+    {
+        auto scm = manager->getActiveMetadata();
+        ASSERT_FALSE(scm);
+    }
     manager->refreshActiveMetadata(makeEmptyMetadata());
-    auto notif = manager->trackOrphanedDataCleanup(cr1);
-    ASSERT(notif.get() == nullptr);
+    {
+        auto scm = manager->getActiveMetadata();
+        ASSERT_TRUE(scm);
+        auto optNotif = manager->trackOrphanedDataCleanup(cr1);
+        ASSERT(!optNotif);
+    }
+    
+    addTwoChunks(manager.get(), cr1, cr2);  // [0,10), [50,60)
+    // now we have one active tracker, one chunk, no references
+
+    {
+        auto notif = manager->cleanUpRange(cr1);
+        ASSERT(notif && *notif && !notif->get(operationContext()).isOK());  // failed, range in use
+        ASSERT_EQ(notif->get(operationContext()).code(), ErrorCodes::RangeOverlapConflict);
+    }
+
+    CollectionShardingState::CleanupNotification notifn1, notifn2;
+    boost::optional<CollectionShardingState::CleanupNotification> optNotifn3;
+
     {
         ASSERT_EQ(manager->numberOfMetadataSnapshots(), 0UL);
         ASSERT_EQ(manager->numberOfRangesToClean(), 0UL);
+        ASSERT_EQ(manager->numberOfRangesToCleanStillInUse(), 0UL);
+        auto scm = manager->getActiveMetadata();
+        // one tracker, two chunks active with reference
 
-        auto scm = manager->getActiveMetadata();  // and increment scm's refcount
+        removeOneChunk(manager.get(), cr1);
+        // two trackers: one chunk active, two chunks with one ref on the snapshot
+
+        ASSERT_EQ(manager->numberOfRangesToCleanStillInUse(), 0UL);
+
         ASSERT(bool(scm));
-        manager->cleanUpRange(cr1);
-        manager->cleanUpRange(cr1);
+        notifn1 = manager->cleanUpRange(cr1);
+        notifn2 = manager->cleanUpRange(cr1);
+        // now two deletions on active chunk, pending release of old tracker.
 
-        addChunk(manager.get());  // push new metadata, old has a reference and two orphan ranges
+        ASSERT_TRUE(notifn1 && notifn2 && notifn1.get() != notifn2.get());  // not the same referent
+        ASSERT_FALSE(*notifn1 || *notifn2);  // and not triggered
+
+        optNotifn3 = manager->trackOrphanedDataCleanup(cr1);
+        ASSERT(optNotifn3 && optNotifn3->get() == notifn2.get());  // same referent as most recent
 
         ASSERT_EQ(manager->numberOfMetadataSnapshots(), 1UL);
         ASSERT_EQ(manager->numberOfRangesToCleanStillInUse(), 2UL);
         ASSERT_EQ(manager->numberOfRangesToClean(), 0UL);  // not yet...
 
-        notif = manager->trackOrphanedDataCleanup(cr1);  // will wake when scm goes away
     }  // scm destroyed, refcount of tracker goes to zero
     ASSERT_EQ(manager->numberOfMetadataSnapshots(), 0UL);
     ASSERT_EQ(manager->numberOfRangesToCleanStillInUse(), 0UL);
     ASSERT_EQ(manager->numberOfRangesToClean(), 2UL);
-    ASSERT(!bool(notif));                                  // waiting
-    auto notif2 = manager->trackOrphanedDataCleanup(cr1);  // now tracking in _rangesToClean
-    ASSERT(notif.get() == notif2.get());
 }
 
 TEST_F(MetadataManagerTest, RefreshAfterSuccessfulMigrationSinglePending) {
@@ -239,13 +307,11 @@ TEST_F(MetadataManagerTest, RefreshAfterSuccessfulMigrationSinglePending) {
     manager->refreshActiveMetadata(makeEmptyMetadata());
     const ChunkRange cr1(BSON("key" << 0), BSON("key" << 10));
     ASSERT_EQ(manager->getActiveMetadata()->getChunks().size(), 0UL);
-
-    ChunkVersion version = manager->getActiveMetadata()->getCollVersion();
-    version.incMajor();
-
-    manager->refreshActiveMetadata(cloneMetadataPlusChunk(
-        *manager->getActiveMetadata().getMetadata(), cr1.getMin(), cr1.getMax(), version));
+    auto notifn = manager->beginReceive(cr1);
+    ASSERT_EQ(manager->numberOfRangesToClean(), 1UL);  // direct to queue
+    addChunk(manager.get());
     ASSERT_EQ(manager->getActiveMetadata()->getChunks().size(), 1UL);
+    ASSERT_EQ(manager->numberOfMetadataSnapshots(), 0UL);
 }
 
 
@@ -259,6 +325,7 @@ TEST_F(MetadataManagerTest, RefreshAfterSuccessfulMigrationMultiplePending) {
     ASSERT_EQ(manager->getActiveMetadata()->getChunks().size(), 0UL);
 
     {
+        auto scm = manager->getActiveMetadata();
         ChunkVersion version = manager->getActiveMetadata()->getCollVersion();
         version.incMajor();
 
@@ -266,7 +333,9 @@ TEST_F(MetadataManagerTest, RefreshAfterSuccessfulMigrationMultiplePending) {
             *manager->getActiveMetadata().getMetadata(), cr1.getMin(), cr1.getMax(), version));
         ASSERT_EQ(manager->numberOfRangesToClean(), 0UL);
         ASSERT_EQ(manager->getActiveMetadata()->getChunks().size(), 1UL);
+        ASSERT_EQ(manager->numberOfMetadataSnapshots(), 1UL);
     }
+    ASSERT_EQ(manager->numberOfMetadataSnapshots(), 0UL);
 
     {
         ChunkVersion version = manager->getActiveMetadata()->getCollVersion();
@@ -283,8 +352,6 @@ TEST_F(MetadataManagerTest, RefreshAfterNotYetCompletedMigrationMultiplePending)
         std::make_shared<MetadataManager>(getServiceContext(), kNss, manager, executor());
     manager->refreshActiveMetadata(makeEmptyMetadata());
 
-    const ChunkRange cr1(BSON("key" << 0), BSON("key" << 10));
-    const ChunkRange cr2(BSON("key" << 30), BSON("key" << 40));
     ASSERT_EQ(manager->getActiveMetadata()->getChunks().size(), 0UL);
 
     ChunkVersion version = manager->getActiveMetadata()->getCollVersion();
@@ -303,11 +370,34 @@ TEST_F(MetadataManagerTest, BeginReceiveWithOverlappingRange) {
         std::make_shared<MetadataManager>(getServiceContext(), kNss, manager, executor());
     manager->refreshActiveMetadata(makeEmptyMetadata());
 
+    CollectionShardingState::CleanupNotification notifn1, notifn2, notifn3;
+
     const ChunkRange cr1(BSON("key" << 0), BSON("key" << 10));
     const ChunkRange cr2(BSON("key" << 30), BSON("key" << 40));
+    addTwoChunks(manager.get(), cr1, cr2);
+    ASSERT_EQ(manager->getActiveMetadata()->getChunks().size(), 2UL);
     const ChunkRange crOverlap(BSON("key" << 5), BSON("key" << 35));
+    notifn1 = manager->beginReceive(crOverlap);  // not allowed
+    ASSERT_TRUE(*notifn1);
+    ASSERT_TRUE(notifn1->get(operationContext()).code() == ErrorCodes::RangeOverlapConflict);
 
+    {
+        auto scm = manager->getActiveMetadata();
+        manager->refreshActiveMetadata(makeEmptyMetadata());
+        // Even though the active chunks don't overlap, old metadata is still in use and block
+        // clearing space for new chunks.
+        notifn2 = manager->beginReceive(crOverlap);
+        ASSERT_TRUE(*notifn2);
+        ASSERT_TRUE(notifn2->get(operationContext()).code() == ErrorCodes::RangeOverlapConflict);
+        // But regular cleanup requests go through.
+        notifn3 = manager->cleanUpRange(crOverlap);
+        // Not immediately...
+        ASSERT_TRUE(!*notifn3);
+    }
     ASSERT_EQ(manager->getActiveMetadata()->getChunks().size(), 0UL);
+    ASSERT_EQ(manager->numberOfMetadataSnapshots(), 0UL);
+    // but eventually.
+    ASSERT_EQ(manager->numberOfRangesToClean(), 1UL);
 }
 
 TEST_F(MetadataManagerTest, RefreshMetadataAfterDropAndRecreate) {
