@@ -376,16 +376,16 @@ TEST_F(MetadataManagerTest, BeginReceiveWithOverlappingRange) {
     const ChunkRange cr2(BSON("key" << 30), BSON("key" << 40));
     addTwoChunks(manager.get(), cr1, cr2);
     ASSERT_EQ(manager->getActiveMetadata()->getChunks().size(), 2UL);
-    const ChunkRange crOverlap(BSON("key" << 5), BSON("key" << 35));
+    const ChunkRange crOverlap(BSON("key" << 5), BSON("key" << 15));
     notifn1 = manager->beginReceive(crOverlap);  // not allowed
     ASSERT_TRUE(*notifn1);
     ASSERT_TRUE(notifn1->get(operationContext()).code() == ErrorCodes::RangeOverlapConflict);
 
     {
         auto scm = manager->getActiveMetadata();
-        manager->refreshActiveMetadata(makeEmptyMetadata());
-        // Even though the active chunks don't overlap, old metadata is still in use and block
-        // clearing space for new chunks.
+        removeOneChunk(manager.get(), cr1);
+        // Even though the active chunks don't overlap the range to clear, old metadata is still in
+        // use, and blocks clearing space to migrate in the (presumed) new chunk.
         notifn2 = manager->beginReceive(crOverlap);
         ASSERT_TRUE(*notifn2);
         ASSERT_TRUE(notifn2->get(operationContext()).code() == ErrorCodes::RangeOverlapConflict);
@@ -394,7 +394,7 @@ TEST_F(MetadataManagerTest, BeginReceiveWithOverlappingRange) {
         // Not immediately...
         ASSERT_TRUE(!*notifn3);
     }
-    ASSERT_EQ(manager->getActiveMetadata()->getChunks().size(), 0UL);
+    ASSERT_EQ(manager->getActiveMetadata()->getChunks().size(), 1UL);
     ASSERT_EQ(manager->numberOfMetadataSnapshots(), 0UL);
     // but eventually.
     ASSERT_EQ(manager->numberOfRangesToClean(), 1UL);
