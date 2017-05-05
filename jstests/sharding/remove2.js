@@ -42,8 +42,7 @@ load("jstests/replsets/rslib.js");
 
         assert.soon(function() {
             var x = st.chunkDiff(coll.getName(), coll.getDB().getName());
-
-            print("chunk diff 1: " + x);
+            print("chunk diff: " + x);
             return x < 2;
         }, "no balance happened", 30 * 60 * 1000);
 
@@ -88,7 +87,7 @@ load("jstests/replsets/rslib.js");
 
     assert.soon(function() {
         var x = st.chunkDiff('remove2', "test");
-        print("chunk diff 2: " + x);
+        print("chunk diff: " + x);
         return x < 2;
     }, "no balance happened", 30 * 60 * 1000);
 

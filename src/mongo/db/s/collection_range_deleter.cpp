@@ -274,14 +274,14 @@ void CollectionRangeDeleter::clear(Status status) {
         if (*(range.notification)) {
             continue;  // was triggered in the test driver
         }
-        log() << "Notifying deletion event (clear) " << (intptr_t) range.notification.get();
+        LOG(1) << "Notifying deletion event (clear) " << (intptr_t) range.notification.get();
         range.notification->set(status);  // wake up anything still waiting
     }
     _orphans.clear();
 }
 
 void CollectionRangeDeleter::_pop(Status result) {
-    log() << "Notifying deletion event " << (intptr_t) _orphans.front().notification.get();
+    LOG(1) << "Notifying deletion event " << (intptr_t) _orphans.front().notification.get();
     _orphans.front().notification->set(result);  // wake up waitForClean
     _orphans.pop_front();
 }

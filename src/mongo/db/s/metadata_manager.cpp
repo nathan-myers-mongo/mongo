@@ -160,7 +160,7 @@ void MetadataManager::_notifyFail() {
                   "tracking orphaned range deletion abandoned because the"
                   " collection was dropped or became unsharded"};
     if (!*_notification) {  // not already triggered; check just because test driver triggers it
-        log() << "Notifying deletion tracking event (clear) " << (intptr_t) _notification.get();
+        LOG(1) << "Notifying deletion tracking event (clear) " << (intptr_t) _notification.get();
         _notification->set(status);
     }
     _notification = std::make_shared<Notification<Status>>();
@@ -228,9 +228,9 @@ void MetadataManager::refreshActiveMetadata(std::unique_ptr<CollectionMetadata> 
               << remoteMetadata->toStringBasic() << " due to epoch change";
 
         _receivingChunks.clear();
+        _notifyFail();
         _metadataInUse.clear();
         _setActiveMetadata_inlock(std::move(remoteMetadata));
-        _notifyFail();
         return;
     }
 
@@ -273,6 +273,7 @@ void MetadataManager::_setActiveMetadata_inlock(std::unique_ptr<CollectionMetada
         _metadataInUse.push_back(std::move(_activeMetadataTracker));
     }
     _activeMetadataTracker = std::make_shared<Tracker>(std::move(newMetadata), this);
+    _retireExpiredMetadata();
 }
 
 // call locked
@@ -556,7 +557,7 @@ bool MetadataManager::_overlapsInUseCleanups(ChunkRange const& range) {
 
 // call locked
 void MetadataManager::_notifyInUse() {
-    log() << "Notifying deletion tracking event " << (intptr_t) _notification.get();
+    LOG(1) << "Notifying deletion tracking event " << (intptr_t) _notification.get();
     _notification->set(Status::OK());  // wake up waitForClean
     _notification = std::make_shared<Notification<Status>>();
 }
