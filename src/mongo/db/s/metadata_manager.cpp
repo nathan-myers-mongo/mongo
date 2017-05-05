@@ -152,12 +152,18 @@ MetadataManager::~MetadataManager() {
 
     // still need to block the deleter thread:
     stdx::lock_guard<stdx::mutex> scopedLock(_managerLock);
+    _notifyFail();
+}
+
+void MetadataManager::_notifyFail() {
     Status status{ErrorCodes::InterruptedDueToReplStateChange,
                   "tracking orphaned range deletion abandoned because the"
                   " collection was dropped or became unsharded"};
-    if (!*_notification) {  // check just because test driver triggers it
+    if (!*_notification) {  // not already triggered; check just because test driver triggers it
+        log() << "Notifying deletion tracking event (clear) " << (intptr_t) _notification.get();
         _notification->set(status);
     }
+    _notification = std::make_shared<Notification<Status>>();
     _rangesToClean.clear(status);
 }
 
@@ -192,9 +198,8 @@ void MetadataManager::refreshActiveMetadata(std::unique_ptr<CollectionMetadata> 
               << _activeMetadataTracker->metadata->toStringBasic() << " as no longer sharded";
 
         _receivingChunks.clear();
-        _rangesToClean.clear(Status{ErrorCodes::InterruptedDueToReplStateChange,
-                                    "Collection sharding metadata destroyed"});
         _setActiveMetadata_inlock(nullptr);
+        _notifyFail();
         return;
     }
 
@@ -223,9 +228,9 @@ void MetadataManager::refreshActiveMetadata(std::unique_ptr<CollectionMetadata> 
               << remoteMetadata->toStringBasic() << " due to epoch change";
 
         _receivingChunks.clear();
-        _rangesToClean.clear(Status::OK());
         _metadataInUse.clear();
         _setActiveMetadata_inlock(std::move(remoteMetadata));
+        _notifyFail();
         return;
     }
 
@@ -551,6 +556,7 @@ bool MetadataManager::_overlapsInUseCleanups(ChunkRange const& range) {
 
 // call locked
 void MetadataManager::_notifyInUse() {
+    log() << "Notifying deletion tracking event " << (intptr_t) _notification.get();
     _notification->set(Status::OK());  // wake up waitForClean
     _notification = std::make_shared<Notification<Status>>();
 }

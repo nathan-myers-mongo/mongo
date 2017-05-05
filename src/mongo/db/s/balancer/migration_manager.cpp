@@ -146,6 +146,7 @@ MigrationStatuses MigrationManager::executeMigrationsForAutoBalance(
             auto notification = std::move(response.first);
             auto migrateInfo = std::move(response.second);
 
+            log() << "balancer waiting for notification on " << (intptr_t) notification.get();
             const auto& remoteCommandResponse = notification->get();
 
             auto it = scopedMigrationRequests.find(migrateInfo.getName());
@@ -177,8 +178,10 @@ Status MigrationManager::executeManualMigration(
         return statusWithScopedMigrationRequest.getStatus();
     }
 
-    RemoteCommandResponse remoteCommandResponse =
-        _schedule(opCtx, migrateInfo, maxChunkSizeBytes, secondaryThrottle, waitForDelete)->get();
+    auto notification = _schedule(
+            opCtx, migrateInfo, maxChunkSizeBytes, secondaryThrottle, waitForDelete);
+    log() << "Sleeping on remote command response " << (intptr_t) notification.get();
+    RemoteCommandResponse remoteCommandResponse = notification->get();
 
     auto routingInfoStatus =
         Grid::get(opCtx)->catalogCache()->getShardedCollectionRoutingInfoWithRefresh(
@@ -375,6 +378,7 @@ void MigrationManager::finishRecovery(OperationContext* opCtx,
 
     // Wait for each migration to finish, as usual.
     for (auto& response : responses) {
+        log() << "Sleeping on remote command response " << (intptr_t) response.get();
         response->get();
     }
 }
