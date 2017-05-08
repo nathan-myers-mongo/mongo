@@ -146,7 +146,7 @@ MigrationStatuses MigrationManager::executeMigrationsForAutoBalance(
             auto notification = std::move(response.first);
             auto migrateInfo = std::move(response.second);
 
-            LOG(1) << "balancer waiting for notification on " << (intptr_t) notification.get();
+            LOG(1) << "Balancer waiting for notification on " << (intptr_t) notification.get();
             const auto& remoteCommandResponse = notification->get();
 
             auto it = scopedMigrationRequests.find(migrateInfo.getName());
@@ -180,7 +180,8 @@ Status MigrationManager::executeManualMigration(
 
     auto notification = _schedule(
             opCtx, migrateInfo, maxChunkSizeBytes, secondaryThrottle, waitForDelete);
-    LOG(1) << "Sleeping on remote command response " << (intptr_t) notification.get();
+    LOG(1) << "Migration manager sleeping on remote command response "
+           << (intptr_t) notification.get();
     RemoteCommandResponse remoteCommandResponse = notification->get();
 
     auto routingInfoStatus =
@@ -378,7 +379,8 @@ void MigrationManager::finishRecovery(OperationContext* opCtx,
 
     // Wait for each migration to finish, as usual.
     for (auto& response : responses) {
-        LOG(1) << "Sleeping on remote command response " << (intptr_t) response.get();
+        LOG(1) << "Migration manager sleeping on remote command response "
+               << (intptr_t) response.get();
         response->get();
     }
 }

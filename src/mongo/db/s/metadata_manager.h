@@ -195,7 +195,7 @@ private:
     void _removeFromReceiving(ChunkRange const& range);
 
     /**
-     * Wakes up any clients waiting on a range to leave _metadataInUse.
+     * Wakes up any clients waiting on a range to leave _metadataInUse
      *
      * Must be called locked.
      */
