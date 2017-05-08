@@ -87,15 +87,15 @@ bool CollectionRangeDeleter::cleanUpNextRange(OperationContext* opCtx,
     {
         AutoGetCollection autoColl(opCtx, nss, MODE_IX);
         auto* collection = autoColl.getCollection();
-        if (!collection) {
-            return false;  // collection was dropped
-        }
-
         auto* css = CollectionShardingState::get(opCtx, nss);
         {
             auto scopedCollectionMetadata = css->getMetadata();
-            if (!scopedCollectionMetadata) {
-                return false;  // collection was unsharded
+            if (!collection || !scopedCollectionMetadata) {
+                // collection was dropped or unsharded
+                log() << "Cleaning up range deletions from leftover shard state";
+                stdx::lock_guard<stdx::mutex> scopedLock(css->_metadataManager._managerLock);
+                css->_metadataManager._clearAllCleanups();
+                return false;
             }
 
             // We don't actually know if this is the same collection that we were originally
