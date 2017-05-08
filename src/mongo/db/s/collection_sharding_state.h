@@ -122,6 +122,11 @@ public:
     void markNotShardedAtStepdown();
 
     /**
+     * Return a notification that has already been triggered with Status argument passed.
+     */
+    auto makeImmediateNotification(Status) -> CleanupNotification;
+
+    /**
      * Schedules any documents in the range for immediate cleanup iff no running queries can depend
      * on them, and adds the range to the list of pending ranges. Otherwise, returns false.  Does
      * not block.  Call get() on the return value to wait for the deletion to complete or fail.

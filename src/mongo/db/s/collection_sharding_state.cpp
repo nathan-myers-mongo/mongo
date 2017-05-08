@@ -121,6 +121,12 @@ void CollectionShardingState::markNotShardedAtStepdown() {
     _metadataManager.refreshActiveMetadata(nullptr);
 }
 
+auto CollectionShardingState::makeImmediateNotification(Status status) -> CleanupNotification {
+    auto notifn = std::make_shared<Notification<Status>>();
+    notifn->set(status);
+    return notifn;
+}
+
 auto CollectionShardingState::beginReceive(ChunkRange const& range) -> CleanupNotification {
     return _metadataManager.beginReceive(range);
 }
@@ -212,9 +218,7 @@ Status CollectionShardingState::waitForClean(OperationContext* opCtx,
         if (!result.isOK()) {
             return Status{result.code(),
                           str::stream() << "Failed to delete orphaned " << nss.ns() << " range "
-                                        << orphanRange.toString()
-                                        << ": "
-                                        << result.reason()};
+                                        << orphanRange.toString() << ": " << result.reason()};
         }
     } while (true);
     MONGO_UNREACHABLE;
