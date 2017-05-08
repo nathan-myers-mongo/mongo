@@ -212,7 +212,9 @@ Status CollectionShardingState::waitForClean(OperationContext* opCtx,
         if (!result.isOK()) {
             return Status{result.code(),
                           str::stream() << "Failed to delete orphaned " << nss.ns() << " range "
-                                        << orphanRange.toString() << ": " << result.reason()};
+                                        << orphanRange.toString()
+                                        << ": "
+                                        << result.reason()};
         }
     } while (true);
     MONGO_UNREACHABLE;

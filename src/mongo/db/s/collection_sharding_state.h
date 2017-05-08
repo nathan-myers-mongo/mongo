@@ -193,7 +193,7 @@ public:
      * again after each wakeup until it returns boost::none, because there can be more than one
      * range scheduled for deletion that overlaps its argument.
      */
-    auto trackOrphanedDataCleanup(ChunkRange const& range) -> boost::optional<CleanupNotification>; 
+    auto trackOrphanedDataCleanup(ChunkRange const& range) -> boost::optional<CleanupNotification>;
 
     /**
      * Returns a range _not_ owned by this shard that starts no lower than the specified

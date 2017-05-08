@@ -226,7 +226,7 @@ TEST_F(MetadataManagerTest, NotificationBlocksUntilDeletion) {
     }  // scm destroyed, refcount of tracker goes to zero
     ASSERT_EQ(manager.numberOfMetadataSnapshots(), 0UL);
     ASSERT_EQ(manager.numberOfRangesToClean(), 1UL);
-    ASSERT(bool(optNotif) && bool(*optNotif));                            // woke
+    ASSERT(bool(optNotif) && bool(*optNotif));         // woke
     optNotif = manager.trackOrphanedDataCleanup(cr1);  // now tracking the range in _rangesToClean
     ASSERT_TRUE(optNotif && optNotif->get() != nullptr && !**optNotif);
 }

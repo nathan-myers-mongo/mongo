@@ -494,7 +494,7 @@ void MetadataManager::forgetReceive(ChunkRange const& range) {
               !_activeMetadataTracker->metadata->rangeOverlapsChunk(range));
 
     _removeFromReceiving(range);
-    (void) _pushRangeToClean(range);
+    (void)_pushRangeToClean(range);
 }
 
 auto MetadataManager::cleanUpRange(ChunkRange const& range) -> CleanupNotification {
@@ -505,13 +505,14 @@ auto MetadataManager::cleanUpRange(ChunkRange const& range) -> CleanupNotificati
 
     if (metadata->rangeOverlapsChunk(range)) {
         notifn->set({ErrorCodes::RangeOverlapConflict,
-                    str::stream() << "Requested deletion range overlaps a live shard chunk"});
+                     str::stream() << "Requested deletion range overlaps a live shard chunk"});
         return notifn;
     }
 
     if (rangeMapOverlaps(_receivingChunks, range.getMin(), range.getMax())) {
-        notifn->set({ErrorCodes::RangeOverlapConflict,
-                str::stream() << "Requested deletion range overlaps a chunk being migrated in"});
+        notifn->set(
+            {ErrorCodes::RangeOverlapConflict,
+             str::stream() << "Requested deletion range overlaps a chunk being migrated in"});
         return notifn;
     }
 
@@ -580,13 +581,13 @@ auto MetadataManager::_overlapsInUseCleanups(ChunkRange const& range)
     }
     auto tracker = _metadataInUse.crbegin(), et = _metadataInUse.crend();
     for (; tracker != et; ++tracker) {
-         cleanup = (*tracker)->orphans.crbegin();
-         ec = (*tracker)->orphans.crend();
-         for (; cleanup != ec; ++cleanup) {
-             if (bool(cleanup->range.overlapWith(range))) {
-                 return cleanup->notification;
-             }
-         }
+        cleanup = (*tracker)->orphans.crbegin();
+        ec = (*tracker)->orphans.crend();
+        for (; cleanup != ec; ++cleanup) {
+            if (bool(cleanup->range.overlapWith(range))) {
+                return cleanup->notification;
+            }
+        }
     }
     return boost::none;
 }

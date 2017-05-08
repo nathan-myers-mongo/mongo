@@ -247,7 +247,7 @@ auto CollectionRangeDeleter::overlaps(ChunkRange const& range) const
         return bool(cleanee.range.overlapWith(range));
     });
     if (it == _orphans.rend()) {
-         return boost::none;
+        return boost::none;
     }
     return it->notification;
 }
