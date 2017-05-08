@@ -54,7 +54,10 @@ class MetadataManager {
 public:
     using CleanupNotification = CollectionRangeDeleter::DeleteNotification;
 
-    MetadataManager(ServiceContext*, NamespaceString nss, executor::TaskExecutor* rangeDeleter);
+    MetadataManager(ServiceContext*,
+                    NamespaceString nss,
+                    std::shared_ptr<MetadataManager>& self,
+                    executor::TaskExecutor* rangeDeleter);
     ~MetadataManager();
 
     /**
@@ -222,14 +225,13 @@ private:
     // data members
 
     const NamespaceString _nss;
-
     // ServiceContext from which to obtain instances of global support objects.
     ServiceContext* const _serviceContext;
 
+    const std::shared_ptr<MetadataManager>& _self;  // to be copied into ScopedCollectionMetadata
+
     // Mutex to protect the state below
     stdx::mutex _managerLock;
-
-    bool _shuttingDown{false};
 
     // The collection metadata reflecting chunks accessible to new queries
     std::shared_ptr<Tracker> _activeMetadataTracker;
@@ -294,7 +296,8 @@ private:
      *
      * Must be called with tracker->manager locked.
      */
-    ScopedCollectionMetadata(std::shared_ptr<MetadataManager::Tracker> tracker);
+    ScopedCollectionMetadata(std::shared_ptr<MetadataManager> manager,
+                             std::shared_ptr<MetadataManager::Tracker> tracker);
 
     /**
      * Disconnect from the tracker, possibly triggering GC of unused CollectionMetadata.
@@ -302,6 +305,7 @@ private:
     void _clear();
 
     std::shared_ptr<MetadataManager::Tracker> _tracker{nullptr};
+    std::shared_ptr<MetadataManager> _manager{nullptr};
 
     friend ScopedCollectionMetadata MetadataManager::getActiveMetadata();  // uses our private ctor
 };

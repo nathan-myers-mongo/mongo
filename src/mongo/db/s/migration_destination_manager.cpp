@@ -980,22 +980,20 @@ auto MigrationDestinationManager::_notePending(OperationContext* opCtx,
     // This can currently happen because drops aren't synchronized with in-migrations.  The idea
     // for checking this here is that in the future we shouldn't have this problem.
     if (!metadata || metadata->getCollVersion().epoch() != epoch) {
-        return CollectionShardingState::CleanupNotification{
-            Status{ErrorCodes::StaleShardVersion,
-                   str::stream() << "not noting chunk " << redact(range.toString())
-                                 << " as pending because the epoch of "
-                                 << nss.ns()
-                                 << " changed"}};
+        return Status{ErrorCodes::StaleShardVersion,
+                      str::stream() << "not noting chunk " << redact(range.toString())
+                                    << " as pending because the epoch of "
+                                    << nss.ns()
+                                    << " changed"};
     }
 
     // start clearing any leftovers that would be in the new chunk
     auto notification = css->beginReceive(range);
     if (notification.ready() && !notification.waitStatus(opCtx).isOK()) {
-        return CollectionShardingState::CleanupNotification{
-            Status{notification.waitStatus(opCtx).code(),
-                   str::stream() << "Collection " << nss.ns() << " range " << range.toString()
-                                 << " migration aborted: "
-                                 << notification.waitStatus(opCtx).reason()}};
+        return Status{notification.waitStatus(opCtx).code(),
+                      str::stream() << "Collection " << nss.ns() << " range " << range.toString()
+                                    << " migration aborted: "
+                                    << notification.waitStatus(opCtx).reason()};
     }
     return notification;
 }
