@@ -49,7 +49,11 @@ class ScopedCollectionMetadata;
 class MetadataManager {
     MONGO_DISALLOW_COPYING(MetadataManager);
 
+    struct Tracker;
+
 public:
+    using CleanupNotification = CollectionRangeDeleter::DeleteNotification;
+
     MetadataManager(ServiceContext*, NamespaceString nss, executor::TaskExecutor* rangeDeleter);
     ~MetadataManager();
 
@@ -92,7 +96,7 @@ public:
      * If no running queries can depend on documents in the range, schedules any such documents for
      * immediate cleanup. Otherwise, returns false.
      */
-    bool beginReceive(ChunkRange const& range);
+    CleanupNotification beginReceive(ChunkRange const& range);
 
     /**
      * Removes the range from the pending list, and schedules any documents in the range for
@@ -109,7 +113,7 @@ public:
      * Must be called with the collection locked for writing.  To monitor completion, use
      * trackOrphanedDataCleanup or CollectionShardingState::waitForClean.
      */
-    Status cleanUpRange(ChunkRange const& range);
+    CleanupNotification cleanUpRange(ChunkRange const& range);
 
     /**
      * Returns the number of ranges scheduled to be cleaned, exclusive of such ranges that might
@@ -125,18 +129,23 @@ public:
      */
     size_t numberOfRangesToCleanStillInUse();
 
-    using CleanupNotification = CollectionRangeDeleter::DeleteNotification;
     /**
-     * Reports whether the argument range is still scheduled for deletion. If not, returns nullptr.
-     * Otherwise, returns a notification n such that n->get(opCtx) will wake when deletion of a
-     * range (possibly the one of interest) is completed.
+     * Reports whether any range still scheduled for deletion overlaps the argument range. If so,
+     * returns a notification n such that n.waitStatus(opCtx) will wake up when the newest
+     * overlapping range's deletion (possibly the one of interest) completes or fails.
      */
-    CleanupNotification trackOrphanedDataCleanup(ChunkRange const& orphans);
+    boost::optional<CleanupNotification> trackOrphanedDataCleanup(ChunkRange const& orphans);
 
     boost::optional<KeyRange> getNextOrphanRange(BSONObj const& from);
 
+    using Deletion = CollectionRangeDeleter::Deletion;
+
 private:
-    struct Tracker;
+    /**
+     * Cancel all scheduled deletions of orphan ranges, notifying listeners with status
+     * InterruptedDueToReplStateChange.
+     */
+    void _clearAllCleanups();
 
     /**
      * Cancel all scheduled deletions of orphan ranges, notifying listeners with status
@@ -172,7 +181,7 @@ private:
      *
      * Must be called locked.
      */
-    bool _overlapsInUseCleanups(ChunkRange const& range);
+    auto _overlapsInUseCleanups(ChunkRange const& range) -> boost::optional<CleanupNotification>;
 
     /**
      * Deletes ranges, in background, until done, normally using a task executor attached to the
@@ -184,12 +193,20 @@ private:
     static void _scheduleCleanup(executor::TaskExecutor*, NamespaceString nss);
 
     /**
-     * Adds the range to the list of ranges scheduled for immediate deletion, and schedules a
-     * a background task to perform the work.
+     * Copies the argument range to the list of ranges scheduled for immediate deletion, and
+     * schedules a a background task to perform the work.
      *
      * Must be called locked.
      */
-    void _pushRangeToClean(ChunkRange const& range);
+    CleanupNotification _pushRangeToClean(ChunkRange const& range);
+
+    /**
+     * Splices the argument list elements to the list of ranges scheduled for immediate deletion,
+     * and schedules a a background task to perform the work.
+     *
+     * Must be called locked.
+     */
+    void _pushListToClean(std::list<Deletion> range);
 
     /**
      * Adds a range from the receiving map, so getNextOrphanRange will skip ranges migrating in.
@@ -197,17 +214,10 @@ private:
     void _addToReceiving(ChunkRange const& range);
 
     /**
-     * Removes a range from the receiving map after a migration failure. range.minKey() must
+     * Removes a range from the receiving map after a migration failure. The range must
      * exactly match an element of _receivingChunks.
      */
     void _removeFromReceiving(ChunkRange const& range);
-
-    /**
-     * Wakes up any clients waiting on a range to leave _metadataInUse
-     *
-     * Must be called locked.
-     */
-    void _notifyInUse();
 
     // data members
 
@@ -230,10 +240,6 @@ private:
 
     // Chunk ranges being migrated into to the shard. Indexed by the min key of the range.
     RangeMap _receivingChunks;
-
-    // Clients can sleep on copies of _notification while waiting for their orphan ranges to fall
-    // out of use.
-    std::shared_ptr<Notification<Status>> _notification;
 
     // The background task that deletes documents from orphaned chunk ranges.
     executor::TaskExecutor* const _executor;
