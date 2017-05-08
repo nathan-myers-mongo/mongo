@@ -142,6 +142,12 @@ public:
 
 private:
     /**
+     * Cancel all scheduled deletions of orphan ranges, notifying listeners with status
+     * InterruptedDueToReplStateChange.
+     */
+    void _clearAllCleanups();
+
+    /**
      * Retires any metadata that has fallen out of use, and pushes any orphan ranges found in them
      * to the list of ranges actively being cleaned up.
      */

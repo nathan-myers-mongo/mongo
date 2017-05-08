@@ -136,6 +136,7 @@ MetadataManager::~MetadataManager() {
     {
         // drain any threads that might remove _metadataInUse entries, push to deleter
         stdx::lock_guard<stdx::mutex> scopedLock(_managerLock);
+        _clearAllCleanups();
         inUse = std::move(_metadataInUse);
     }
 
@@ -148,24 +149,6 @@ MetadataManager::~MetadataManager() {
         stdx::lock_guard<stdx::mutex> scopedLock(_activeMetadataTracker->trackerLock);
         _activeMetadataTracker->manager = nullptr;
     }
-
-    // still need to block the deleter thread:
-    stdx::lock_guard<stdx::mutex> scopedLock(_managerLock);
-    Status status{ErrorCodes::InterruptedDueToReplStateChange,
-                  "tracking orphaned range deletion abandoned because the"
-                  " collection was dropped or became unsharded"};
-    inUse.push_back(_activeMetadataTracker);
-    for (auto& tracker : inUse) {
-        while (!tracker->orphans.empty()) {
-            auto& deletion = tracker->orphans.front();
-            if (!*deletion.notification) {  // unit test might have triggered it already...
-                deletion.notification->set(status);
-            }
-            tracker->orphans.pop_front();
-        }
-    }
-    inUse.pop_back();
-    _rangesToClean.clear(status);
 }
 
 ScopedCollectionMetadata MetadataManager::getActiveMetadata() {
@@ -179,6 +162,23 @@ ScopedCollectionMetadata MetadataManager::getActiveMetadata() {
 size_t MetadataManager::numberOfMetadataSnapshots() {
     stdx::lock_guard<stdx::mutex> scopedLock(_managerLock);
     return _metadataInUse.size();
+}
+
+void MetadataManager::_clearAllCleanups() {
+    Status status{ErrorCodes::InterruptedDueToReplStateChange,
+                  "Collection sharding metadata destroyed"};
+    _rangesToClean.clear(status);
+    _metadataInUse.push_back(_activeMetadataTracker);
+    for (auto& tracker : _metadataInUse) {
+        while (!tracker->orphans.empty()) {
+            auto& deletion = tracker->orphans.front();
+            if (!*deletion.notification) {  // unit test might have triggered it already...
+                deletion.notification->set(status);
+            }
+            tracker->orphans.pop_front();
+        }
+    }
+    _metadataInUse.pop_back();
 }
 
 void MetadataManager::refreshActiveMetadata(std::unique_ptr<CollectionMetadata> remoteMetadata) {
@@ -199,20 +199,7 @@ void MetadataManager::refreshActiveMetadata(std::unique_ptr<CollectionMetadata> 
               << _activeMetadataTracker->metadata->toStringBasic() << " as no longer sharded";
 
         _receivingChunks.clear();
-        Status status{ErrorCodes::InterruptedDueToReplStateChange,
-                      "Collection sharding metadata destroyed"};
-        _rangesToClean.clear(status);
-        _metadataInUse.push_back(_activeMetadataTracker);
-        for (auto& tracker : _metadataInUse) {
-            while (!tracker->orphans.empty()) {
-                auto& deletion = tracker->orphans.front();
-                if (!*deletion.notification) {  // unit test might have triggered it already...
-                    deletion.notification->set(status);
-                }
-                tracker->orphans.pop_front();
-            }
-        }
-        _metadataInUse.pop_back();
+        _clearAllCleanups();
         _setActiveMetadata_inlock(nullptr);
         return;
     }
@@ -241,22 +228,8 @@ void MetadataManager::refreshActiveMetadata(std::unique_ptr<CollectionMetadata> 
               << _activeMetadataTracker->metadata->toStringBasic() << " to "
               << remoteMetadata->toStringBasic() << " due to epoch change";
 
-        _setActiveMetadata_inlock(std::move(remoteMetadata));
         _receivingChunks.clear();
-        Status status{ErrorCodes::InterruptedDueToReplStateChange,
-                      "Collection sharding metadata destroyed"};
-        _rangesToClean.clear(status);
-        _metadataInUse.push_back(_activeMetadataTracker);
-        for (auto& tracker : _metadataInUse) {
-            while (!tracker->orphans.empty()) {
-                auto& deletion = tracker->orphans.front();
-                if (!*deletion.notification) {  // unit test might have triggered it already...
-                    deletion.notification->set(status);
-                }
-                tracker->orphans.pop_front();
-            }
-        }
-        _metadataInUse.clear();
+        _clearAllCleanups();
         _activeMetadataTracker = nullptr;
         _setActiveMetadata_inlock(std::move(remoteMetadata));  // start fresh
         return;
@@ -297,10 +270,9 @@ void MetadataManager::refreshActiveMetadata(std::unique_ptr<CollectionMetadata> 
 }
 
 void MetadataManager::_setActiveMetadata_inlock(std::unique_ptr<CollectionMetadata> newMetadata) {
-    if (_activeMetadataTracker->usageCounter != 0 || !_activeMetadataTracker->orphans.empty()) {
-        _metadataInUse.push_back(std::move(_activeMetadataTracker));
-    }
+    _metadataInUse.push_back(std::move(_activeMetadataTracker));
     _activeMetadataTracker = std::make_shared<Tracker>(std::move(newMetadata), this);
+    _retireExpiredMetadata();
 }
 
 // call locked
