@@ -83,6 +83,7 @@ CleanupResult cleanupOrphanedData(OperationContext* opCtx,
 
     BSONObj startingFromKey = startingFromKeyConst;
     boost::optional<ChunkRange> targetRange;
+    CollectionShardingState::CleanupNotification notifn;
     OID epoch;
     {
         AutoGetCollection autoColl(opCtx, ns, MODE_IX);
@@ -125,14 +126,16 @@ CleanupResult cleanupOrphanedData(OperationContext* opCtx,
 
         targetRange.emplace(
             ChunkRange(orphanRange->minKey.getOwned(), orphanRange->maxKey.getOwned()));
-        uassertStatusOK(css->cleanUpRange(*targetRange));
+        notifn = css->cleanUpRange(*targetRange);
     }
-    if (targetRange) {
-        auto result = CollectionShardingState::waitForClean(opCtx, ns, epoch, *targetRange);
-        if (!result.isOK()) {
-            warning() << redact(result.reason());
-            return CleanupResult_Error;
-        }
+
+    // Sleep waiting for our own deletion. We don't actually care about any others, so there is no
+    // need to call css::waitForClean() here.
+    Status result = notifn->get(opCtx);
+    if (!result.isOK()) {
+        log() << redact(result.reason());
+        *errMsg = result.reason();
+        return CleanupResult_Error;
     }
     return CleanupResult_Continue;
 }

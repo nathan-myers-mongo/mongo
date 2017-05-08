@@ -394,7 +394,10 @@ Status MigrationSourceManager::commitChunkMetadataOnConfig(OperationContext* opC
 
         // Schedule clearing out orphaned documents when they are no longer in active use.
         const auto orphans = ChunkRange(_args.getMinKey(), _args.getMaxKey());
-        uassertStatusOK(css->cleanUpRange(orphans));
+        auto notification = css->cleanUpRange(orphans);
+        if (*notification) {  // if it fails immediately, report that
+            return notification->get(opCtx);
+        }
 
         // Migration succeeded
         log() << "Migration succeeded and updated collection version to "

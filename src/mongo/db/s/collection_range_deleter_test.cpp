@@ -71,6 +71,7 @@ protected:
         return RemoteCommandTargeterMock::get(shardRegistry()->getConfigShard()->getTargeter());
     }
 
+    using Deletion = CollectionRangeDeleter::Deletion;
 
 private:
     void setUp() override;
@@ -143,9 +144,14 @@ TEST_F(CollectionRangeDeleterTest, NoDataInGivenRangeToClean) {
     dbclient.insert(kNss.toString(), insertedDoc);
     ASSERT_BSONOBJ_EQ(insertedDoc, dbclient.findOne(kNss.toString(), QUERY(kPattern << 25)));
 
-    rangeDeleter.add(ChunkRange(BSON(kPattern << 0), BSON(kPattern << 10)));
+    std::list<Deletion> ranges;
+    CollectionRangeDeleter::DeleteNotification notifn = std::make_shared<Notification<Status>>();
+    ranges.emplace_back(Deletion{ChunkRange(BSON(kPattern << 0), BSON(kPattern << 10)), notifn});
+    rangeDeleter.add(std::move(ranges));
+    ASSERT_EQ(1u, rangeDeleter.size());
     ASSERT_TRUE(next(rangeDeleter, 1));
 
+    ASSERT_EQ(0u, rangeDeleter.size());
     ASSERT_BSONOBJ_EQ(insertedDoc, dbclient.findOne(kNss.toString(), QUERY(kPattern << 25)));
 
     ASSERT_FALSE(next(rangeDeleter, 1));
@@ -159,10 +165,21 @@ TEST_F(CollectionRangeDeleterTest, OneDocumentInOneRangeToClean) {
     dbclient.insert(kNss.toString(), BSON(kPattern << 5));
     ASSERT_BSONOBJ_EQ(insertedDoc, dbclient.findOne(kNss.toString(), QUERY(kPattern << 5)));
 
-    rangeDeleter.add(ChunkRange(BSON(kPattern << 0), BSON(kPattern << 10)));
+    std::list<Deletion> ranges;
+    auto notifn = std::make_shared<Notification<Status>>();
+    ranges.emplace_back(Deletion{ChunkRange(BSON(kPattern << 0), BSON(kPattern << 10)), notifn});
+    rangeDeleter.add(std::move(ranges));
+    ASSERT_TRUE(ranges.empty());  // spliced elements out of it
 
-    ASSERT_TRUE(next(rangeDeleter, 1));
-    ASSERT_TRUE(next(rangeDeleter, 1));
+    ASSERT(!*notifn);
+    ASSERT_TRUE(next(rangeDeleter, 1));  // actually delete one
+    ASSERT(!*notifn);
+
+    ASSERT_EQ(rangeDeleter.size(), 1u);
+    ASSERT_TRUE(next(rangeDeleter, 1));  // range empty, pop range, notify
+    ASSERT_TRUE(rangeDeleter.isEmpty());
+    ASSERT(*notifn && notifn->get(operationContext()).isOK());
+
     ASSERT_TRUE(dbclient.findOne(kNss.toString(), QUERY(kPattern << 5)).isEmpty());
     ASSERT_FALSE(next(rangeDeleter, 1));
 }
@@ -176,7 +193,10 @@ TEST_F(CollectionRangeDeleterTest, MultipleDocumentsInOneRangeToClean) {
     dbclient.insert(kNss.toString(), BSON(kPattern << 3));
     ASSERT_EQUALS(3ULL, dbclient.count(kNss.toString(), BSON(kPattern << LT << 5)));
 
-    rangeDeleter.add(ChunkRange(BSON(kPattern << 0), BSON(kPattern << 10)));
+    std::list<Deletion> ranges;
+    CollectionRangeDeleter::DeleteNotification notifn = std::make_shared<Notification<Status>>();
+    ranges.emplace_back(Deletion{ChunkRange(BSON(kPattern << 0), BSON(kPattern << 10)), notifn});
+    rangeDeleter.add(std::move(ranges));
 
     ASSERT_TRUE(next(rangeDeleter, 100));
     ASSERT_TRUE(next(rangeDeleter, 100));
@@ -194,7 +214,10 @@ TEST_F(CollectionRangeDeleterTest, MultipleCleanupNextRangeCalls) {
     dbclient.insert(kNss.toString(), BSON(kPattern << 3));
     ASSERT_EQUALS(3ULL, dbclient.count(kNss.toString(), BSON(kPattern << LT << 5)));
 
-    rangeDeleter.add(ChunkRange(BSON(kPattern << 0), BSON(kPattern << 10)));
+    std::list<Deletion> ranges;
+    CollectionRangeDeleter::DeleteNotification notifn = std::make_shared<Notification<Status>>();
+    ranges.emplace_back(Deletion{ChunkRange(BSON(kPattern << 0), BSON(kPattern << 10)), notifn});
+    rangeDeleter.add(std::move(ranges));
 
     ASSERT_TRUE(next(rangeDeleter, 1));
     ASSERT_EQUALS(2ULL, dbclient.count(kNss.toString(), BSON(kPattern << LT << 5)));
@@ -222,18 +245,41 @@ TEST_F(CollectionRangeDeleterTest, MultipleDocumentsInMultipleRangesToClean) {
     ASSERT_EQUALS(6ULL, dbclient.count(kNss.toString(), BSON(kPattern << LT << 10)));
 
     const ChunkRange chunkRange1 = ChunkRange(BSON(kPattern << 0), BSON(kPattern << 4));
+    std::list<Deletion> ranges;
+    CollectionRangeDeleter::DeleteNotification notifn1 = std::make_shared<Notification<Status>>();
+    ranges.emplace_back(Deletion{std::move(chunkRange1), notifn1});
+    rangeDeleter.add(std::move(ranges));
     const ChunkRange chunkRange2 = ChunkRange(BSON(kPattern << 4), BSON(kPattern << 7));
-    rangeDeleter.add(chunkRange1);
-    rangeDeleter.add(chunkRange2);
+    ASSERT_TRUE(ranges.empty());
+    CollectionRangeDeleter::DeleteNotification notifn2 = std::make_shared<Notification<Status>>();
+    ranges.emplace_back(Deletion{std::move(chunkRange2), notifn2});
+    rangeDeleter.add(std::move(ranges));
+
+    ASSERT_TRUE(notifn1.get() != nullptr && !*notifn1);
+    ASSERT_TRUE(notifn2.get() != nullptr && !*notifn2);
 
     ASSERT_TRUE(next(rangeDeleter, 100));
+    ASSERT_TRUE(!*notifn1);  // no trigger yet
+    ASSERT_TRUE(!*notifn2);  // no trigger yet
+
     ASSERT_EQUALS(0ULL, dbclient.count(kNss.toString(), BSON(kPattern << LT << 4)));
     ASSERT_EQUALS(3ULL, dbclient.count(kNss.toString(), BSON(kPattern << LT << 10)));
 
     ASSERT_TRUE(next(rangeDeleter, 100));  // discover there are no more < 4, pop range 1
+
+    ASSERT_TRUE(*notifn1 && notifn1->get(operationContext()).isOK());
+    ASSERT_FALSE(*notifn2);
+
+    ASSERT_EQUALS(3ULL, dbclient.count(kNss.toString(), BSON(kPattern << LT << 10)));
+
     ASSERT_TRUE(next(rangeDeleter, 100));  // delete the remaining documents
-    ASSERT_TRUE(next(rangeDeleter, 1));    // discover there are no more, pop range 2
+    ASSERT_FALSE(*notifn2);
+
     ASSERT_EQUALS(0ULL, dbclient.count(kNss.toString(), BSON(kPattern << LT << 10)));
+
+    ASSERT_TRUE(next(rangeDeleter, 1));  // discover there are no more, pop range 2
+    ASSERT_TRUE(*notifn2 && notifn2->get(operationContext()).isOK());
+
     ASSERT_FALSE(next(rangeDeleter, 1));  // discover there are no more ranges
 }
 

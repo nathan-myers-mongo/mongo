@@ -122,6 +122,10 @@ bool CollectionRangeDeleter::cleanUpNextRange(OperationContext* opCtx,
             }
 
             if (!wrote.isOK() || wrote.getValue() == 0) {
+                if (wrote.isOK()) {
+                    log() << "No documents remain to delete in " << nss << " range "
+                          << redact(range->toString());
+                }
                 stdx::lock_guard<stdx::mutex> scopedLock(css->_metadataManager._managerLock);
                 self->_pop(wrote.getStatus());
                 return true;
@@ -236,19 +240,24 @@ StatusWith<int> CollectionRangeDeleter::_doDeletion(OperationContext* opCtx,
     return numDeleted;
 }
 
-auto CollectionRangeDeleter::overlaps(ChunkRange const& range) const -> DeleteNotification {
+auto CollectionRangeDeleter::overlaps(ChunkRange const& range) const
+    -> boost::optional<DeleteNotification> {
     // start search with newest entries by using reverse iterators
     auto it = find_if(_orphans.rbegin(), _orphans.rend(), [&](auto& cleanee) {
         return bool(cleanee.range.overlapWith(range));
     });
-    return it != _orphans.rend() ? it->notification : DeleteNotification();
+    if (it == _orphans.rend()) {
+         return boost::none;
+    }
+    return it->notification;
 }
 
-void CollectionRangeDeleter::add(ChunkRange const& range) {
+bool CollectionRangeDeleter::add(std::list<Deletion> ranges) {
     // We ignore the case of overlapping, or even equal, ranges.
     // Deleting overlapping ranges is quick.
-    _orphans.emplace_back(Deletion{ChunkRange(range.getMin().getOwned(), range.getMax().getOwned()),
-                                   std::make_shared<Notification<Status>>()});
+    bool wasEmpty = _orphans.empty();
+    _orphans.splice(_orphans.end(), ranges);
+    return wasEmpty;
 }
 
 void CollectionRangeDeleter::append(BSONObjBuilder* builder) const {
@@ -271,8 +280,8 @@ bool CollectionRangeDeleter::isEmpty() const {
 
 void CollectionRangeDeleter::clear(Status status) {
     for (auto& range : _orphans) {
-        if (*(range.notification)) {
-            continue;  // was triggered in the test driver
+        if (*(range.notification)) {  // This (inherently racy) check is needed only because it may
+            continue;                 // have been triggered in the test driver.
         }
         range.notification->set(status);  // wake up anything still waiting
     }
