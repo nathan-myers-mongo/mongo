@@ -90,7 +90,7 @@ bool CollectionRangeDeleter::cleanUpNextRange(OperationContext* opCtx,
         auto* css = CollectionShardingState::get(opCtx, nss);
         {
             auto scopedCollectionMetadata = css->getMetadata();
-            if (!collection || !scopedCollectionMetadata) {
+            if ((!collection || !scopedCollectionMetadata) && !rangeDeleterForTestOnly) {
                 // collection was dropped or unsharded
                 log() << "Cleaning up range deletions from leftover shard state";
                 stdx::lock_guard<stdx::mutex> scopedLock(css->_metadataManager._managerLock);
