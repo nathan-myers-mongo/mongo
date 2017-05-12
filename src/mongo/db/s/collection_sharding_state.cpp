@@ -121,12 +121,6 @@ void CollectionShardingState::markNotShardedAtStepdown() {
     _metadataManager.refreshActiveMetadata(nullptr);
 }
 
-auto CollectionShardingState::makeImmediateNotification(Status status) -> CleanupNotification {
-    auto notifn = std::make_shared<Notification<Status>>();
-    notifn->set(status);
-    return notifn;
-}
-
 auto CollectionShardingState::beginReceive(ChunkRange const& range) -> CleanupNotification {
     return _metadataManager.beginReceive(range);
 }
@@ -194,7 +188,7 @@ Status CollectionShardingState::waitForClean(OperationContext* opCtx,
                                              OID const& epoch,
                                              ChunkRange orphanRange) {
     do {
-        auto stillScheduled = boost::optional<CollectionShardingState::CleanupNotification>();
+        auto stillScheduled = boost::optional<CleanupNotification>();
         {
             AutoGetCollection autoColl(opCtx, nss, MODE_IX);
             // First, see if collection was dropped.
@@ -214,11 +208,13 @@ Status CollectionShardingState::waitForClean(OperationContext* opCtx,
         }  // drop collection lock
 
         log() << "Waiting for deletion of " << nss.ns() << " range " << orphanRange;
-        Status result = (*stillScheduled)->get(opCtx);
+        Status result = stillScheduled->join(opCtx);
         if (!result.isOK()) {
             return Status{result.code(),
                           str::stream() << "Failed to delete orphaned " << nss.ns() << " range "
-                                        << orphanRange.toString() << ": " << result.reason()};
+                                        << orphanRange.toString()
+                                        << ": "
+                                        << result.reason()};
         }
     } while (true);
     MONGO_UNREACHABLE;

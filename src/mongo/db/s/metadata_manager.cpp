@@ -157,7 +157,7 @@ void MetadataManager::_clearAllCleanups() {
         _pushListToClean(std::move(tracker->orphans));
     }
     _rangesToClean.clear({ErrorCodes::InterruptedDueToReplStateChange,
-                         "Collection sharding metadata destroyed"});  // and notify all listeners
+                          "Collection sharding metadata destroyed"});  // and notify all listeners
 }
 
 ScopedCollectionMetadata MetadataManager::getActiveMetadata() {
@@ -405,9 +405,8 @@ void MetadataManager::_scheduleCleanup(executor::TaskExecutor* executor, Namespa
 // call locked
 auto MetadataManager::_pushRangeToClean(ChunkRange const& range) -> CleanupNotification {
     std::list<Deletion> ranges;
-    auto notifn = std::make_shared<Notification<Status>>();
-    Deletion deletion{ChunkRange(range.getMin().getOwned(), range.getMax().getOwned()), notifn};
-    ranges.emplace_back(std::move(deletion));
+    ranges.emplace_back(Deletion{ChunkRange{range.getMin().getOwned(), range.getMax().getOwned()}});
+    auto& notifn = ranges.back().notification;
     _pushListToClean(std::move(ranges));
     return notifn;
 }
@@ -430,10 +429,8 @@ auto MetadataManager::beginReceive(ChunkRange const& range) -> CleanupNotificati
 
     auto* metadata = _activeMetadataTracker->metadata.get();
     if (_overlapsInUseChunk(range) || metadata->rangeOverlapsChunk(range)) {
-        CleanupNotification notifn = std::make_shared<Notification<Status>>();
-        notifn->set({ErrorCodes::RangeOverlapConflict,
-                     "Documents in target range may still be in use on the destination shard."});
-        return notifn;
+        return Status{ErrorCodes::RangeOverlapConflict,
+                      "Documents in target range may still be in use on the destination shard."};
     }
     _addToReceiving(range);
     log() << "Scheduling deletion of any documents in " << _nss.ns() << " range "
@@ -458,26 +455,27 @@ void MetadataManager::forgetReceive(ChunkRange const& range) {
               !_activeMetadataTracker->metadata->rangeOverlapsChunk(range));
 
     _removeFromReceiving(range);
-    (void)_pushRangeToClean(range);
+
+    // avoid generating a notification to delete: allows stronger check in its destructor.
+    std::list<Deletion> ranges;
+    ranges.emplace_back(Deletion{ChunkRange{range.getMin().getOwned(), range.getMax().getOwned()}});
+    _pushListToClean(std::move(ranges));
 }
 
 auto MetadataManager::cleanUpRange(ChunkRange const& range) -> CleanupNotification {
     stdx::unique_lock<stdx::mutex> scopedLock(_managerLock);
     CollectionMetadata* metadata = _activeMetadataTracker->metadata.get();
     invariant(metadata != nullptr);
-    auto notifn = std::make_shared<Notification<Status>>();
 
     if (metadata->rangeOverlapsChunk(range)) {
-        notifn->set({ErrorCodes::RangeOverlapConflict,
-                     str::stream() << "Requested deletion range overlaps a live shard chunk"});
-        return notifn;
+        return Status{ErrorCodes::RangeOverlapConflict,
+                      str::stream() << "Requested deletion range overlaps a live shard chunk"};
     }
 
     if (rangeMapOverlaps(_receivingChunks, range.getMin(), range.getMax())) {
-        notifn->set(
-            {ErrorCodes::RangeOverlapConflict,
-             str::stream() << "Requested deletion range overlaps a chunk being migrated in"});
-        return notifn;
+        return Status{ErrorCodes::RangeOverlapConflict,
+                      str::stream() << "Requested deletion range overlaps a chunk being"
+                                       " migrated in"};
     }
 
     if (!_overlapsInUseChunk(range)) {
@@ -487,8 +485,8 @@ auto MetadataManager::cleanUpRange(ChunkRange const& range) -> CleanupNotificati
         return _pushRangeToClean(range);
     }
 
-    Deletion deletion{ChunkRange(range.getMin().getOwned(), range.getMax().getOwned()), notifn};
-    _activeMetadataTracker->orphans.emplace_back(std::move(deletion));
+    _activeMetadataTracker->orphans.emplace_back(
+        Deletion{ChunkRange{range.getMin().getOwned(), range.getMax().getOwned()}});
 
     log() << "Scheduling " << _nss.ns() << " range " << redact(range.toString())
           << " for deletion after all possibly-dependent queries finish";

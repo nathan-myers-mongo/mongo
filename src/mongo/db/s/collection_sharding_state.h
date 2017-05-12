@@ -62,7 +62,7 @@ public:
      * A shared_ptr<Notification<Status>>, signaled when a particular range deletion request
      * completes or fails.
      */
-    using CleanupNotification = MetadataManager::CleanupNotification;
+    using CleanupNotification = CollectionRangeDeleter::DeleteNotification;
 
     /**
      * Instantiates a new per-collection sharding state as unsharded.
@@ -120,11 +120,6 @@ public:
      * slaveOk queries.
      */
     void markNotShardedAtStepdown();
-
-    /**
-     * Return a notification that has already been triggered with Status argument passed.
-     */
-    auto makeImmediateNotification(Status) -> CleanupNotification;
 
     /**
      * Schedules any documents in the range for immediate cleanup iff no running queries can depend

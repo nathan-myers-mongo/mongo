@@ -43,11 +43,32 @@ class CollectionRangeDeleter {
     MONGO_DISALLOW_COPYING(CollectionRangeDeleter);
 
 public:
-    using DeleteNotification = std::shared_ptr<Notification<Status>>;
+    struct DeleteNotification {
+        DeleteNotification();
+        DeleteNotification(Status status);
+        DeleteNotification(DeleteNotification&& notifn) = default;
+        DeleteNotification& operator=(DeleteNotification&& notifn) = default;
+        DeleteNotification(DeleteNotification const& notifn) = default;
+        DeleteNotification& operator=(DeleteNotification const& notifn) = default;
+        ~DeleteNotification();
+
+        void notify(Status status) const;
+
+        Status join(OperationContext* opCtx) const {
+            return notification->get(opCtx);
+        }
+        bool ready() const {
+            return bool(*notification);
+        }
+
+    private:
+        std::shared_ptr<Notification<Status>> notification;
+    };
 
     struct Deletion {
-        ChunkRange const range;
-        DeleteNotification const notification;
+        Deletion(ChunkRange r) : range(std::move(r)) {}
+        ChunkRange range;
+        DeleteNotification notification{};
     };
 
     //
@@ -60,6 +81,7 @@ public:
      */
     CollectionRangeDeleter() = default;
     ~CollectionRangeDeleter();
+
 
     /**
      * Splices range's elements to the list to be cleaned up by the deleter thread. Returns true

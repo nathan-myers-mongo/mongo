@@ -131,7 +131,7 @@ public:
 
     /**
      * Reports whether any range still scheduled for deletion overlaps the argument range. If so,
-     * returns a notification n such that n->get(opCtx) will wake when the newest overlapping
+     * returns a notification n such that n.join(opCtx) will wake up when the newest overlapping
      * range's deletion (possibly the one of interest) completes or fails.
      */
     boost::optional<CleanupNotification> trackOrphanedDataCleanup(ChunkRange const& orphans);

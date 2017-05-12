@@ -257,7 +257,7 @@ bool CollectionRangeDeleter::add(std::list<Deletion> ranges) {
     // Deleting overlapping ranges is quick.
     bool wasEmpty = _orphans.empty();
     _orphans.splice(_orphans.end(), ranges);
-    return wasEmpty;
+    return wasEmpty && !_orphans.empty();
 }
 
 void CollectionRangeDeleter::append(BSONObjBuilder* builder) const {
@@ -280,17 +280,34 @@ bool CollectionRangeDeleter::isEmpty() const {
 
 void CollectionRangeDeleter::clear(Status status) {
     for (auto& range : _orphans) {
-        if (*(range.notification)) {  // This (inherently racy) check is needed only because it may
-            continue;                 // have been triggered in the test driver.
+        if (range.notification.ready()) {  // This (inherently racy) check is needed only because
+            continue;                      // it may have been triggered in the test driver.
         }
-        range.notification->set(status);  // wake up anything still waiting
+        range.notification.notify(status);  // wake up anything still waiting
     }
     _orphans.clear();
 }
 
 void CollectionRangeDeleter::_pop(Status result) {
-    _orphans.front().notification->set(result);  // wake up waitForClean
+    _orphans.front().notification.notify(result);  // wake up waitForClean
     _orphans.pop_front();
+}
+
+CollectionRangeDeleter::DeleteNotification::DeleteNotification()
+    : notification(std::make_shared<Notification<Status>>()) {}
+
+CollectionRangeDeleter::DeleteNotification::DeleteNotification(Status status)
+    : notification(std::make_shared<Notification<Status>>()) {
+    notify(status);
+}
+
+CollectionRangeDeleter::DeleteNotification::~DeleteNotification() {
+    // can be null only if moved from
+    dassert(!notification || *notification || notification.use_count() == 1);
+}
+
+void CollectionRangeDeleter::DeleteNotification::notify(Status status) const {
+    notification->set(status);
 }
 
 }  // namespace mongo

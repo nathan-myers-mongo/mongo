@@ -131,7 +131,7 @@ CleanupResult cleanupOrphanedData(OperationContext* opCtx,
 
     // Sleep waiting for our own deletion. We don't actually care about any others, so there is no
     // need to call css::waitForClean() here.
-    Status result = notifn->get(opCtx);
+    Status result = notifn.join(opCtx);
     if (!result.isOK()) {
         log() << redact(result.reason());
         *errMsg = result.reason();
