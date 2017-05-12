@@ -136,7 +136,7 @@ MetadataManager::~MetadataManager() {
     {
         // drain any threads that might remove _metadataInUse entries, push to deleter
         stdx::lock_guard<stdx::mutex> scopedLock(_managerLock);
-        _clearAllCleanups();
+        _clearAllCleanups_inlock();
         inUse = std::move(_metadataInUse);
     }
 
@@ -151,7 +151,7 @@ MetadataManager::~MetadataManager() {
     }
 }
 
-void MetadataManager::_clearAllCleanups() {
+void MetadataManager::_clearAllCleanups_inlock() {
     _pushListToClean(std::move(_activeMetadataTracker->orphans));
     for (auto& tracker : _metadataInUse) {
         _pushListToClean(std::move(tracker->orphans));
@@ -191,7 +191,7 @@ void MetadataManager::refreshActiveMetadata(std::unique_ptr<CollectionMetadata> 
               << _activeMetadataTracker->metadata->toStringBasic() << " as no longer sharded";
 
         _receivingChunks.clear();
-        _clearAllCleanups();
+        _clearAllCleanups_inlock();
         _setActiveMetadata_inlock(nullptr);
         return;
     }
@@ -221,7 +221,7 @@ void MetadataManager::refreshActiveMetadata(std::unique_ptr<CollectionMetadata> 
               << remoteMetadata->toStringBasic() << " due to epoch change";
 
         _receivingChunks.clear();
-        _clearAllCleanups();
+        _clearAllCleanups_inlock();
         _activeMetadataTracker = nullptr;
         _setActiveMetadata_inlock(std::move(remoteMetadata));  // start fresh
         return;
