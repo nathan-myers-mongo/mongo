@@ -43,6 +43,14 @@ class CollectionRangeDeleter {
     MONGO_DISALLOW_COPYING(CollectionRangeDeleter);
 
 public:
+    /**
+      * This is an object n that asynchronously changes state when a scheduled range deletion
+      * completes or fails. Call n.ready() to discover if the event has already occurred.  Call
+      * n.waitStatus(opCtx) to sleep waiting for the event, and get its result.
+      *
+      * It is an error to destroy a returned CleanupNotification object n unless either n.ready()
+      * is true or n.abandon() has been called.  After n.abandon(), n is in a moved-from state.
+      */
     struct DeleteNotification {
         DeleteNotification();
         DeleteNotification(Status status);
@@ -55,8 +63,6 @@ public:
         DeleteNotification(DeleteNotification const& notifn) = default;
         DeleteNotification& operator=(DeleteNotification const& notifn) = default;
 
-        // It is an error to destroy a DeleteNotification unless it is ready, moved-from, or unique
-        // (i.e., no other instances extant).  Call abandon() before destroying, otherwise.
         ~DeleteNotification();
 
         void notify(Status status) const {
@@ -92,7 +98,6 @@ public:
      */
     CollectionRangeDeleter() = default;
     ~CollectionRangeDeleter();
-
 
     /**
      * Splices range's elements to the list to be cleaned up by the deleter thread. Returns true
