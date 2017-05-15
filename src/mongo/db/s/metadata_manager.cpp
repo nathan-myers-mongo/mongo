@@ -156,10 +156,10 @@ void MetadataManager::_clearAllCleanups_inlock() {
     for (auto& tracker : _metadataInUse) {
         _pushListToClean(std::move(tracker->orphans));
     }
-    _rangesToClean.clear(
-         {ErrorCodes::InterruptedDueToReplStateChange,
-          str::stream() << "Range deletions in " << _nss.ns() << " abandoned because collection was"
-                                "  dropped or became unsharded"});
+    _rangesToClean.clear({ErrorCodes::InterruptedDueToReplStateChange,
+                          str::stream() << "Range deletions in " << _nss.ns()
+                                        << " abandoned because collection was"
+                                           "  dropped or became unsharded"});
 }
 
 ScopedCollectionMetadata MetadataManager::getActiveMetadata() {
