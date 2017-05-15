@@ -152,10 +152,10 @@ MetadataManager::~MetadataManager() {
 }
 
 void MetadataManager::_clearAllCleanups_inlock() {
-    _pushListToClean(std::move(_activeMetadataTracker->orphans));
     for (auto& tracker : _metadataInUse) {
         _pushListToClean(std::move(tracker->orphans));
     }
+    _pushListToClean(std::move(_activeMetadataTracker->orphans));
     _rangesToClean.clear({ErrorCodes::InterruptedDueToReplStateChange,
                           str::stream() << "Range deletions in " << _nss.ns()
                                         << " abandoned because collection was"
