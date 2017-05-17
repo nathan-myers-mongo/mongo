@@ -409,7 +409,7 @@ auto MetadataManager::cleanUpRange(ChunkRange const& range) -> CleanupNotificati
     stdx::unique_lock<stdx::mutex> scopedLock(_managerLock);
     invariant(!_metadata.empty());
 
-    auto& activeMetadata = _metadata.back();
+    auto* activeMetadata = _metadata.back().get();
     if (activeMetadata->rangeOverlapsChunk(range)) {
         return Status{ErrorCodes::RangeOverlapConflict,
                       str::stream() << "Requested deletion range overlaps a live shard chunk"};
