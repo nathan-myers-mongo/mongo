@@ -270,7 +270,7 @@ void ScopedCollectionMetadata::_clear() {
     }
     stdx::lock_guard<stdx::mutex> managerLock(_manager->_managerLock);
     invariant(_metadata->_tracker.usageCounter != 0);
-    if (--_metadata->_tracker.usageCounter == 0) {
+    if (--_metadata->_tracker.usageCounter == 0 && !_manager->_metadata.empty()) {
         // MetadataManager doesn't care which usageCounter went to zero.  It justs retires all
         // that are older than the oldest tracker still in use by queries. (Some start out at
         // zero, some go to zero but can't be expired yet.)  Note that new instances of
