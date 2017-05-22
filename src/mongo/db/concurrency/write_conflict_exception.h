@@ -107,7 +107,7 @@ void writeConflictRetry(OperationContext* opCtx, StringData opStr, StringData ns
     while (true) {
         try {
             fun();
-            break;
+            return;
         } catch (WriteConflictException const& wce) {
             ++CurOp::get(opCtx)->debug().writeConflicts;
             wce.logAndBackoff(attempts, opStr, ns);
