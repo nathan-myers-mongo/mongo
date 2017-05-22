@@ -91,14 +91,14 @@ public:
  * other than WriteConflictException.  Each time fun throws a WriteConflictException, logs that,
  * waits a variable amount of time, cleans up, and then tries fun again.  Because it imposes no
  * upper limit on the number of times to re-try fun, any required timeout behavior must be enforced
- * within fun; but note that the exception object member logAndBackoff is virtual, and may throw
- * for reasons of its own.  The function object fun must have return-type void.
+ * within fun. The return-type of fun must be void.
  *
  * When converting from uses of the deprecated macros MONGO_WRITE_CONFLICT_RETRY_LOOP_BEGIN/_END,
  * return-statements in the body code (ending up in fun) must be converted to throw an exception to
  * be caught outside the call to writeConflictRetry.  Any value produced in the body code can only
  * be propagated out in an exception object or via a reference or pointer captured from the
- * enclosing block.
+ * enclosing block.  Note that the exception-object member logAndBackoff called in response to a
+ * WriteConflictException is virtual, and may throw for reasons of its own.
  */
 template <typename Fun>
 void writeConflictRetry(OperationContext* opCtx, StringData opStr, StringData ns, Fun&& fun) {
