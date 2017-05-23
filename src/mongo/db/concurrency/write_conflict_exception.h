@@ -38,27 +38,27 @@
 
 // Use of this macro is deprecated.  Prefer the writeConflictRetry template, below, instead.
 
-#define MONGO_WRITE_CONFLICT_RETRY_LOOP_BEGIN \
-    do {                                      \
-        int wcr__Attempts = 0;                \
-        do {                                  \
+// clang-format off
+
+#define MONGO_WRITE_CONFLICT_RETRY_LOOP_BEGIN                           \
+    do {                                                                \
+        int WCR_attempts = 0;                                           \
+        do {                                                            \
             try
-#define MONGO_WRITE_CONFLICT_RETRY_LOOP_END(PTXN, OPSTR, NSSTR) \
-    catch (const ::mongo::WriteConflictException& wce) {        \
-        const OperationContext* ptxn = (PTXN);                  \
-        ++CurOp::get(ptxn)->debug().writeConflicts;             \
-        wce.logAndBackoff(wcr__Attempts, (OPSTR), (NSSTR));     \
-        ++wcr__Attempts;                                        \
-        ptxn->recoveryUnit()->abandonSnapshot();                \
-        continue;                                               \
-    }                                                           \
-    break;                                                      \
-    }                                                           \
-    while (true)                                                \
-        ;                                                       \
-    }                                                           \
-    while (false)                                               \
-        ;
+#define MONGO_WRITE_CONFLICT_RETRY_LOOP_END(PTXN, OPSTR, NSSTR)         \
+            catch (const ::mongo::WriteConflictException& WCR_wce) {    \
+                OperationContext const* WCR_opCtx = (PTXN);             \
+                ++CurOp::get(WCR_opCtx)->debug().writeConflicts;        \
+                WCR_wce.logAndBackoff(WCR_attempts, (OPSTR), (NSSTR));  \
+                ++WCR_attempts;                                         \
+                WCR_opCtx->recoveryUnit()->abandonSnapshot();           \
+                continue;                                               \
+            }                                                           \
+            break;                                                      \
+        } while (true);                                                 \
+    } while (false);
+
+// clang-format on
 
 namespace mongo {
 
@@ -87,26 +87,25 @@ public:
 };
 
 /**
- * Runs the argument function fun as many times as needed for fun to complete or throw an exception
- * other than WriteConflictException.  Each time fun throws a WriteConflictException, logs that,
- * waits a variable amount of time, cleans up, and then tries fun again.  Because it imposes no
- * upper limit on the number of times to re-try fun, any required timeout behavior must be enforced
- * within fun. The return-type of fun must be void.
+ * Runs the argument function f as many times as needed for f to complete or throw an exception
+ * other than WriteConflictException. The return-type of f must be void.  Each time f throws a
+ * WriteConflictException, writeConflictRetry logs it, waits a spell, cleans up, and then tries f
+ * again.  Because writeConflictRetry imposes no upper limit on the number of times to re-try f, any
+ * required timeout behavior must be enforced within f.
  *
  * When converting from uses of the deprecated macros MONGO_WRITE_CONFLICT_RETRY_LOOP_BEGIN/_END,
- * return-statements in the body code (ending up in fun) must be converted to throw an exception to
- * be caught outside the call to writeConflictRetry.  Any value produced in the body code can only
- * be propagated out in an exception object or via a reference or pointer captured from the
- * enclosing block.  Note that the exception-object member logAndBackoff called in response to a
- * WriteConflictException is virtual, and may throw for reasons of its own.
+ * return-statements in the body code (ending up in f) typically must be converted to throw an
+ * exception to a catch block outside the call to writeConflictRetry.  Any value produced in the
+ * body code propagates out only in an exception object, or via a reference or pointer captured from
+ * the enclosing block.
  */
-template <typename Fun>
-void writeConflictRetry(OperationContext* opCtx, StringData opStr, StringData ns, Fun&& fun) {
+template <typename F>
+void writeConflictRetry(OperationContext* opCtx, StringData opStr, StringData ns, F&& f) {
     static_assert(std::is_same<decltype(f()), void>::value, "Returned result is dropped");
     int attempts = 0;
     while (true) {
         try {
-            fun();
+            f();
             return;
         } catch (WriteConflictException const& wce) {
             ++CurOp::get(opCtx)->debug().writeConflicts;
