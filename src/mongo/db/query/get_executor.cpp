@@ -279,11 +279,9 @@ StatusWith<PrepareExecutionResult> prepareExecution(OperationContext* opCtx,
 
         // Might have to filter out orphaned docs.
         if (plannerParams.options & QueryPlannerParams::INCLUDE_SHARD_FILTER) {
-            root = make_unique<ShardFilterStage>(
-                opCtx,
-                CollectionShardingState::get(opCtx, canonicalQuery->nss())->getMetadata(),
-                ws,
-                root.release());
+            auto newRoot =
+                make_unique<ShardFilterStage>(opCtx, canonicalQuery.get(), ws, root.release());
+            root = std::move(newRoot);
         }
 
         // There might be a projection. The idhack stage will always fetch the full
@@ -296,13 +294,14 @@ StatusWith<PrepareExecutionResult> prepareExecution(OperationContext* opCtx,
 
             // Add a SortKeyGeneratorStage if there is a $meta sortKey projection.
             if (canonicalQuery->getProj()->wantSortKey()) {
-                root = make_unique<SortKeyGeneratorStage>(
+                auto newRoot = make_unique<SortKeyGeneratorStage>(
                     opCtx,
                     root.release(),
                     ws,
                     canonicalQuery->getQueryRequest().getSort(),
                     canonicalQuery->getQueryRequest().getFilter(),
                     canonicalQuery->getCollator());
+                root = std::move(newRoot);
             }
 
             // Stuff the right data into the params depending on what proj impl we use.
@@ -316,7 +315,8 @@ StatusWith<PrepareExecutionResult> prepareExecution(OperationContext* opCtx,
                 params.projImpl = ProjectionStageParams::SIMPLE_DOC;
             }
 
-            root = make_unique<ProjectionStage>(opCtx, params, ws, root.release());
+            auto newRoot = make_unique<ProjectionStage>(opCtx, params, ws, root.release());
+            root = std::move(newRoot);
         }
 
         return PrepareExecutionResult(

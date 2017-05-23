@@ -28,6 +28,8 @@
 
 #define MONGO_LOG_DEFAULT_COMPONENT ::mongo::logger::LogComponent::kQuery
 
+#include <boost/intrusive_ptr.hpp>
+
 #include "mongo/platform/basic.h"
 
 #include "mongo/db/pipeline/pipeline_d.h"
@@ -77,14 +79,15 @@
 #include "mongo/stdx/memory.h"
 #include "mongo/util/log.h"
 
-namespace mongo {
-
 using boost::intrusive_ptr;
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
 
+namespace mongo {
+
 namespace {
+
 class MongodImplementation final : public DocumentSourceNeedsMongod::MongodInterface {
 public:
     MongodImplementation(const intrusive_ptr<ExpressionContext>& ctx)
@@ -292,20 +295,65 @@ private:
     DBDirectClient _client;
 };
 
+auto makeCanonicalQuery(OperationContext* opCtx,
+                        NamespaceString const& nss,
+                        intrusive_ptr<ExpressionContext> const& pExpCtx,
+                        BSONObj queryObj,
+                        BSONObj projectionObj,
+                        BSONObj sortObj,
+                        AggregationRequest const* aggRequest)
+    -> StatusWith<std::unique_ptr<CanonicalQuery>> {
+
+    auto qr = stdx::make_unique<QueryRequest>(nss);
+
+    qr->setFilter(queryObj);
+    qr->setProj(projectionObj);
+    qr->setSort(sortObj);
+
+    if (aggRequest) {
+        qr->setExplain(static_cast<bool>(aggRequest->getExplain()));
+        qr->setHint(aggRequest->getHint());
+    }
+
+    // If the pipeline has a non-null collator, set the collation option to the result of
+    // serializing the collator's spec back into BSON. We do this in order to fill in all options
+    // that the user omitted.
+    //
+    // Otherwise (in the "simple" collation case), we simply set the collation option to the
+    // original user BSON, which is either the empty object (unspecified), or the specification for
+    // the "simple" collation.
+
+    qr->setCollation(pExpCtx->getCollator() ? pExpCtx->getCollator()->getSpec().toBSON()
+                                            : pExpCtx->collation);
+
+    const ExtensionsCallbackReal extensionsCallback(pExpCtx->opCtx, &nss);
+
+    return CanonicalQuery::canonicalize(opCtx, std::move(qr), extensionsCallback);
+}
+
 /**
- * Returns a PlanExecutor which uses a random cursor to sample documents if successful. Returns {}
+ * Returns a PlanExecutor which uses a random cursor to sample documents, if successful. Returns {}
  * if the storage engine doesn't support random cursors, or if 'sampleSize' is a large enough
  * percentage of the collection.
  */
-StatusWith<unique_ptr<PlanExecutor, PlanExecutor::Deleter>> createRandomCursorExecutor(
-    Collection* collection, OperationContext* opCtx, long long sampleSize, long long numRecords) {
+auto makeRandomCursorExecutor(Collection* collection,
+                              intrusive_ptr<ExpressionContext> const& expCtx,
+                              NamespaceString const& nss,
+                              long long sampleSize,
+                              long long numRecords,
+                              AggregationRequest const* aggRequest)
+    -> StatusWith<unique_ptr<PlanExecutor, PlanExecutor::Deleter>> {
+
+    OperationContext* opCtx = expCtx->opCtx;
+
     double kMaxSampleRatioForRandCursor = 0.05;
     if (sampleSize > numRecords * kMaxSampleRatioForRandCursor || numRecords <= 100) {
         return {nullptr};
     }
 
-    // Attempt to get a random cursor from the RecordStore. If the RecordStore does not support
-    // random cursors, attempt to get one from the _id index.
+    // Try to get a random cursor from the RecordStore. If the RecordStore does not support
+    // random cursors, try to get one from the _id index, instead.
+
     std::unique_ptr<RecordCursor> rsRandCursor =
         collection->getRecordStore()->getRandomCursor(opCtx);
 
@@ -343,73 +391,47 @@ StatusWith<unique_ptr<PlanExecutor, PlanExecutor::Deleter>> createRandomCursorEx
             opCtx, ws.get(), idxIterator.release(), nullptr, collection);
     }
 
+    auto const yield = PlanExecutor::YIELD_AUTO;
     {
         AutoGetCollectionForRead autoColl(opCtx, collection->ns());
 
         // If we're in a sharded environment, we need to filter out documents we don't own.
         if (ShardingState::get(opCtx)->needCollectionMetadata(opCtx, collection->ns().ns())) {
-            auto shardFilterStage = stdx::make_unique<ShardFilterStage>(
-                opCtx,
-                CollectionShardingState::get(opCtx, collection->ns())->getMetadata(),
-                ws.get(),
-                stage.release());
-            return PlanExecutor::make(opCtx,
-                                      std::move(ws),
-                                      std::move(shardFilterStage),
-                                      collection,
-                                      PlanExecutor::YIELD_AUTO);
+
+            auto cqWith = makeCanonicalQuery(opCtx, nss, expCtx, {}, {}, {}, aggRequest);
+            if (!cqWith.isOK()) {
+                return cqWith.getStatus();
+            }
+
+            auto cq = std::move(cqWith.getValue());
+            auto shardStage =
+                stdx::make_unique<ShardFilterStage>(opCtx, cq.get(), ws.get(), stage.release());
+            return PlanExecutor::make(
+                opCtx, std::move(ws), std::move(shardStage), std::move(cq), collection, yield);
         }
     }
 
-    return PlanExecutor::make(
-        opCtx, std::move(ws), std::move(stage), collection, PlanExecutor::YIELD_AUTO);
+    return PlanExecutor::make(opCtx, std::move(ws), std::move(stage), collection, yield);
 }
 
-StatusWith<std::unique_ptr<PlanExecutor, PlanExecutor::Deleter>> attemptToGetExecutor(
-    OperationContext* opCtx,
-    Collection* collection,
-    const NamespaceString& nss,
-    const intrusive_ptr<ExpressionContext>& pExpCtx,
-    BSONObj queryObj,
-    BSONObj projectionObj,
-    BSONObj sortObj,
-    const AggregationRequest* aggRequest,
-    const size_t plannerOpts) {
-    auto qr = stdx::make_unique<QueryRequest>(nss);
-    qr->setFilter(queryObj);
-    qr->setProj(projectionObj);
-    qr->setSort(sortObj);
-    if (aggRequest) {
-        qr->setExplain(static_cast<bool>(aggRequest->getExplain()));
-        qr->setHint(aggRequest->getHint());
-    }
+auto attemptToGetExecutor(OperationContext* opCtx,
+                          Collection* collection,
+                          size_t plannerOpts,
+                          StatusWith<std::unique_ptr<CanonicalQuery>> cqWith)
+    -> StatusWith<std::unique_ptr<PlanExecutor, PlanExecutor::Deleter>> {
 
-    // If the pipeline has a non-null collator, set the collation option to the result of
-    // serializing the collator's spec back into BSON. We do this in order to fill in all options
-    // that the user omitted.
-    //
-    // If pipeline has a null collator (representing the "simple" collation), we simply set the
-    // collation option to the original user BSON, which is either the empty object (unspecified),
-    // or the specification for the "simple" collation.
-    qr->setCollation(pExpCtx->getCollator() ? pExpCtx->getCollator()->getSpec().toBSON()
-                                            : pExpCtx->collation);
-
-    const ExtensionsCallbackReal extensionsCallback(pExpCtx->opCtx, &nss);
-
-    auto cq = CanonicalQuery::canonicalize(opCtx, std::move(qr), extensionsCallback);
-
-    if (!cq.isOK()) {
+    if (!cqWith.isOK()) {
         // Return an error instead of uasserting, since there are cases where the combination of
         // sort and projection will result in a bad query, but when we try with a different
         // combination it will be ok. e.g. a sort by {$meta: 'textScore'}, without any projection
         // will fail, but will succeed when the corresponding '$meta' projection is passed in
         // another attempt.
-        return {cq.getStatus()};
+        return {cqWith.getStatus()};
     }
-
     return getExecutor(
-        opCtx, collection, std::move(cq.getValue()), PlanExecutor::YIELD_AUTO, plannerOpts);
+        opCtx, collection, std::move(cqWith.getValue()), PlanExecutor::YIELD_AUTO, plannerOpts);
 }
+
 }  // namespace
 
 void PipelineD::prepareCursorSource(Collection* collection,
@@ -441,21 +463,19 @@ void PipelineD::prepareCursorSource(Collection* collection,
         if (collection && sampleStage) {
             const long long sampleSize = sampleStage->getSampleSize();
             const long long numRecords = collection->getRecordStore()->numRecords(expCtx->opCtx);
-            auto exec = uassertStatusOK(
-                createRandomCursorExecutor(collection, expCtx->opCtx, sampleSize, numRecords));
+            auto exec = uassertStatusOK(makeRandomCursorExecutor(
+                collection, expCtx, nss, sampleSize, numRecords, aggRequest));
+
             if (exec) {
                 // Replace $sample stage with $sampleFromRandomCursor stage.
                 sources.pop_front();
                 std::string idString = collection->ns().isOplog() ? "ts" : "_id";
+
                 sources.emplace_front(DocumentSourceSampleFromRandomCursor::create(
                     expCtx, sampleSize, idString, numRecords));
 
-                addCursorSource(
-                    collection,
-                    pipeline,
-                    expCtx,
-                    std::move(exec),
-                    pipeline->getDependencies(DepsTracker::MetadataAvailable::kNoMetadata));
+                auto deps = pipeline->getDependencies(DepsTracker::MetadataAvailable::kNoMetadata);
+                addCursorSource(collection, pipeline, expCtx, std::move(exec), std::move(deps));
                 return;
             }
         }
@@ -528,18 +548,19 @@ void PipelineD::prepareCursorSource(Collection* collection,
         collection, pipeline, expCtx, std::move(exec), deps, queryObj, sortObj, projForQuery);
 }
 
-StatusWith<std::unique_ptr<PlanExecutor, PlanExecutor::Deleter>> PipelineD::prepareExecutor(
-    OperationContext* opCtx,
-    Collection* collection,
-    const NamespaceString& nss,
-    Pipeline* pipeline,
-    const intrusive_ptr<ExpressionContext>& expCtx,
-    const intrusive_ptr<DocumentSourceSort>& sortStage,
-    const DepsTracker& deps,
-    const BSONObj& queryObj,
-    const AggregationRequest* aggRequest,
-    BSONObj* sortObj,
-    BSONObj* projectionObj) {
+auto PipelineD::prepareExecutor(OperationContext* opCtx,
+                                Collection* collection,
+                                NamespaceString const& nss,
+                                Pipeline* pipeline,
+                                intrusive_ptr<ExpressionContext> const& expCtx,
+                                intrusive_ptr<DocumentSourceSort> const& sortStage,
+                                DepsTracker const& deps,
+                                BSONObj const& queryObj,
+                                AggregationRequest const* aggRequest,
+                                BSONObj* sortObj,
+                                BSONObj* projObj)
+    -> StatusWith<std::unique_ptr<PlanExecutor, PlanExecutor::Deleter>> {
+
     // The query system has the potential to use an index to provide a non-blocking sort and/or to
     // use the projection to generate a covered plan. If this is possible, it is more efficient to
     // let the query system handle those parts of the pipeline. If not, it is more efficient to use
@@ -579,30 +600,19 @@ StatusWith<std::unique_ptr<PlanExecutor, PlanExecutor::Deleter>> PipelineD::prep
         plannerOpts |= QueryPlannerParams::NO_UNCOVERED_PROJECTIONS;
     }
 
-    BSONObj emptyProjection;
     if (sortStage) {
         // See if the query system can provide a non-blocking sort.
-        auto swExecutorSort = attemptToGetExecutor(opCtx,
-                                                   collection,
-                                                   nss,
-                                                   expCtx,
-                                                   queryObj,
-                                                   emptyProjection,
-                                                   *sortObj,
-                                                   aggRequest,
-                                                   plannerOpts);
+        auto cq = makeCanonicalQuery(opCtx, nss, expCtx, queryObj, {}, *sortObj, aggRequest);
+        auto swExecutorSort = attemptToGetExecutor(opCtx, collection, plannerOpts, std::move(cq));
 
         if (swExecutorSort.isOK()) {
+
             // Success! Now see if the query system can also cover the projection.
-            auto swExecutorSortAndProj = attemptToGetExecutor(opCtx,
-                                                              collection,
-                                                              nss,
-                                                              expCtx,
-                                                              queryObj,
-                                                              *projectionObj,
-                                                              *sortObj,
-                                                              aggRequest,
-                                                              plannerOpts);
+            auto swExecutorSortAndProj = attemptToGetExecutor(
+                opCtx,
+                collection,
+                plannerOpts,
+                makeCanonicalQuery(opCtx, nss, expCtx, queryObj, *projObj, *sortObj, aggRequest));
 
             std::unique_ptr<PlanExecutor, PlanExecutor::Deleter> exec;
             if (swExecutorSortAndProj.isOK()) {
@@ -615,7 +625,7 @@ StatusWith<std::unique_ptr<PlanExecutor, PlanExecutor::Deleter>> PipelineD::prep
                                       << swExecutorSortAndProj.getStatus().toString()};
             } else {
                 // The query system couldn't cover the projection.
-                *projectionObj = BSONObj();
+                *projObj = BSONObj();
                 exec = std::move(swExecutorSort.getValue());
             }
 
@@ -627,13 +637,16 @@ StatusWith<std::unique_ptr<PlanExecutor, PlanExecutor::Deleter>> PipelineD::prep
                 pipeline->_sources.push_front(sortStage->getLimitSrc());
             }
             return std::move(exec);
-        } else if (swExecutorSort == ErrorCodes::QueryPlanKilled) {
+        }
+
+        if (swExecutorSort == ErrorCodes::QueryPlanKilled) {
             return {
                 ErrorCodes::OperationFailed,
                 str::stream()
                     << "Failed to determine whether query system can provide a non-blocking sort: "
                     << swExecutorSort.getStatus().toString()};
         }
+
         // The query system can't provide a non-blocking sort.
         *sortObj = BSONObj();
     }
@@ -643,37 +656,32 @@ StatusWith<std::unique_ptr<PlanExecutor, PlanExecutor::Deleter>> PipelineD::prep
     dassert(sortObj->isEmpty());
 
     // See if the query system can cover the projection.
-    auto swExecutorProj = attemptToGetExecutor(opCtx,
-                                               collection,
-                                               nss,
-                                               expCtx,
-                                               queryObj,
-                                               *projectionObj,
-                                               *sortObj,
-                                               aggRequest,
-                                               plannerOpts);
-    if (swExecutorProj.isOK()) {
-        // Success! We have a covered projection.
-        return std::move(swExecutorProj.getValue());
-    } else if (swExecutorProj == ErrorCodes::QueryPlanKilled) {
-        return {ErrorCodes::OperationFailed,
-                str::stream()
-                    << "Failed to determine whether query system can provide a covered projection: "
-                    << swExecutorProj.getStatus().toString()};
+    {
+        auto cq = makeCanonicalQuery(opCtx, nss, expCtx, queryObj, *projObj, *sortObj, aggRequest);
+        auto swExecutorProj = attemptToGetExecutor(opCtx, collection, plannerOpts, std::move(cq));
+        if (swExecutorProj.isOK()) {
+            // Success! We have a covered projection.
+            return std::move(swExecutorProj.getValue());
+        }
+
+        if (swExecutorProj == ErrorCodes::QueryPlanKilled) {
+            return {
+                ErrorCodes::OperationFailed,
+                str::stream() << "Failed to determine whether query system can provide a covered"
+                              << " projection: "
+                              << swExecutorProj.getStatus().toString()};
+        }
     }
 
     // The query system couldn't provide a covered projection.
-    *projectionObj = BSONObj();
-    // If this doesn't work, nothing will.
-    return attemptToGetExecutor(opCtx,
-                                collection,
-                                nss,
-                                expCtx,
-                                queryObj,
-                                *projectionObj,
-                                *sortObj,
-                                aggRequest,
-                                plannerOpts);
+    *projObj = {};
+
+    // If this doesn't work, nothing will:
+    return attemptToGetExecutor(
+        opCtx,
+        collection,
+        plannerOpts,
+        makeCanonicalQuery(opCtx, nss, expCtx, queryObj, *projObj, *sortObj, aggRequest));
 }
 
 void PipelineD::addCursorSource(Collection* collection,

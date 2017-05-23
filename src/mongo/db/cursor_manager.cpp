@@ -26,6 +26,10 @@
 *    it in the license file.
 */
 
+#define MONGO_LOG_DEFAULT_COMPONENT ::mongo::logger::LogComponent::kQuery
+
+#include <functional>
+
 #include "mongo/db/cursor_manager.h"
 
 #include "mongo/base/data_cursor.h"
@@ -46,10 +50,13 @@
 #include "mongo/platform/random.h"
 #include "mongo/stdx/memory.h"
 #include "mongo/util/exit.h"
+#include "mongo/util/log.h"
 #include "mongo/util/startup_test.h"
 
 namespace mongo {
+
 using std::vector;
+using logger::LogComponent;
 
 constexpr Minutes CursorManager::kDefaultCursorTimeoutMinutes;
 
@@ -326,44 +333,62 @@ CursorManager::~CursorManager() {
 void CursorManager::invalidateAll(OperationContext* opCtx,
                                   bool collectionGoingAway,
                                   const std::string& reason) {
+    invalidateIf(opCtx, reason, [](PlanExecutor*) { return true; }, collectionGoingAway);
+}
+
+void CursorManager::invalidateIf(OperationContext* opCtx,
+                                 std::string const& reason,
+                                 stdx::function<bool(PlanExecutor*)> predicate,
+                                 bool collectionGoingAway) {
+
     invariant(!isGlobalManager());  // The global cursor manager should never need to kill cursors.
     dassert(opCtx->lockState()->isCollectionLockedForMode(_nss.ns(), MODE_X));
     fassert(28819, !BackgroundOperation::inProgForNs(_nss));
-    auto allExecPartitions = _registeredPlanExecutors.lockAllPartitions();
-    for (auto&& partition : allExecPartitions) {
-        for (auto&& exec : partition) {
-            // The PlanExecutor is owned elsewhere, so we just mark it as killed and let it be
-            // cleaned up later.
-            exec->markAsKilled(reason);
-        }
-    }
-    allExecPartitions.clear();
 
-    // Mark all cursors as killed, but keep around those we can in order to provide a useful error
-    // message to the user when they attempt to use it next time.
+    bool killed = false;
+    {
+        auto allExecPartitions = _registeredPlanExecutors.lockAllPartitions();
+        for (auto&& partition : allExecPartitions) {
+            for (auto&& exec : partition) {
+
+                if (collectionGoingAway || predicate(exec)) {
+                    killed = true;
+                    exec->markAsKilled(reason);
+                    _registeredPlanExecutors.erase(exec);
+                }
+            }
+        }
+    }  // Drop the plan executor registry locks.
+
     auto allCurrentPartitions = _cursorMap->lockAllPartitions();
     for (auto&& partition : allCurrentPartitions) {
         for (auto it = partition.begin(); it != partition.end();) {
             auto* cursor = it->second;
-            cursor->markAsKilled(reason);
+            auto* exec = cursor->getExecutor();
 
-            // If pinned, there is an active user of this cursor, who is now responsible for
-            // cleaning it up. Otherwise, we can immediately dispose of it.
-            if (cursor->_isPinned) {
-                it = partition.erase(it);
-                continue;
-            }
+            if (collectionGoingAway || predicate(exec)) {
+                killed = true;
+                exec->markAsKilled(reason);
 
-            if (!collectionGoingAway) {
-                // We keep around unpinned cursors so that future attempts to use the cursor will
-                // result in a useful error message.
-                ++it;
-            } else {
-                cursor->dispose(opCtx);
-                delete cursor;
-                it = partition.erase(it);
+                if (collectionGoingAway || cursor->_isPinned) {
+                    // We keep unpinned cursors around so that future attempts to use the cursor
+                    // will result in a useful error message.
+                    if (!cursor->_isPinned) {
+                        // If pinned, the active user of this cursor is responsible for cleaning it
+                        // up. Otherwise, we can immediately dispose of it.
+                        cursor->dispose(opCtx);
+                        delete cursor;
+                    }
+                    it = partition.erase(it);
+                    continue;
+                }
+                // It is marked killed, so it will be deleted eventually.
             }
+            ++it;
         }
+    }
+    if (killed) {
+        log() << "Killed queries: " << reason;
     }
 }
 

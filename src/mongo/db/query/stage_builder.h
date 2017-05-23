@@ -53,7 +53,7 @@ public:
      */
     static bool build(OperationContext* opCtx,
                       Collection* collection,
-                      const CanonicalQuery& cq,
+                      CanonicalQuery& cq,
                       const QuerySolution& solution,
                       WorkingSet* wsIn,
                       PlanStage** rootOut);

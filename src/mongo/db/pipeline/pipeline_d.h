@@ -96,18 +96,18 @@ private:
      * sort, and 'projectionObj' will be set to an empty object if the query system cannot provide a
      * covered projection.
      */
-    static StatusWith<std::unique_ptr<PlanExecutor, PlanExecutor::Deleter>> prepareExecutor(
-        OperationContext* opCtx,
-        Collection* collection,
-        const NamespaceString& nss,
-        Pipeline* pipeline,
-        const boost::intrusive_ptr<ExpressionContext>& expCtx,
-        const boost::intrusive_ptr<DocumentSourceSort>& sortStage,
-        const DepsTracker& deps,
-        const BSONObj& queryObj,
-        const AggregationRequest* aggRequest,
-        BSONObj* sortObj,
-        BSONObj* projectionObj);
+    static auto prepareExecutor(OperationContext* opCtx,
+                                Collection* collection,
+                                NamespaceString const& nss,
+                                Pipeline* pipeline,
+                                boost::intrusive_ptr<ExpressionContext> const& expCtx,
+                                boost::intrusive_ptr<DocumentSourceSort> const& sortStage,
+                                DepsTracker const& deps,
+                                BSONObj const& queryObj,
+                                AggregationRequest const* aggRequest,
+                                BSONObj* sortObj,
+                                BSONObj* projObj)
+        -> StatusWith<std::unique_ptr<PlanExecutor, PlanExecutor::Deleter>>;
 
     /**
      * Creates a DocumentSourceCursor from the given PlanExecutor and adds it to the front of the

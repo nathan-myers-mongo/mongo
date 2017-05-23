@@ -33,6 +33,8 @@
 
 namespace mongo {
 
+class CanonicalQuery;
+
 /**
  * This stage drops documents that didn't belong to the shard we're executing on at the time of
  * construction. This matches the contract for sharded cursorids which guarantees that a
@@ -71,7 +73,7 @@ namespace mongo {
 class ShardFilterStage final : public PlanStage {
 public:
     ShardFilterStage(OperationContext* opCtx,
-                     ScopedCollectionMetadata metadata,
+                     CanonicalQuery* canonicalQuery,
                      WorkingSet* ws,
                      PlanStage* child);
     ~ShardFilterStage();

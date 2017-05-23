@@ -35,6 +35,7 @@
 #include <algorithm>
 #include <utility>
 
+#include "mongo/bson/util/bson_extract.h"
 #include "mongo/db/catalog/collection.h"
 #include "mongo/db/client.h"
 #include "mongo/db/concurrency/write_conflict_exception.h"
@@ -67,6 +68,8 @@ using CallbackArgs = executor::TaskExecutor::CallbackArgs;
 using logger::LogComponent;
 
 namespace {
+
+const char kStartRangeDeletion[] = "startRangeDeletion";
 
 const WriteConcernOptions kMajorityWriteConcern(WriteConcernOptions::kMajority,
                                                 WriteConcernOptions::SyncMode::UNSET,
@@ -131,15 +134,16 @@ auto CollectionRangeDeleter::cleanUpNextRange(OperationContext* opCtx,
                     AutoGetCollection autoAdmin(opCtx, adminSystemVersion, MODE_IX);
 
                     Helpers::upsert(opCtx, adminSystemVersion.ns(),
-                        BSON("_id" << "startRangeDeletion" << "ns" << nss.ns() << "epoch" << epoch
+                        BSON("_id" << kStartRangeDeletion << "ns" << nss.ns() << "epoch" << epoch
                           << "min" << range->getMin() << "max" << range->getMax()));
 
                 } catch (DBException const& e) {
                     stdx::lock_guard<stdx::mutex> scopedLock(css->_metadataManager->_managerLock);
                     css->_metadataManager->_clearAllCleanups(
                         {ErrorCodes::fromInt(e.getCode()),
-                         str::stream() << "cannot push startRangeDeletion record to Op Log,"
-                                         " abandoning scheduled range deletions: " << e.what()});
+                         str::stream() << "cannot push " << kStartRangeDeletion
+                                       << " record to Op Log, abandoning scheduled range"
+                                          " deletions: " << e.what()});
                     return Action::kFinished;
                 }
                 // clang-format on
@@ -359,6 +363,89 @@ Status CollectionRangeDeleter::DeleteNotification::waitStatus(OperationContext* 
         notify({ErrorCodes::Interrupted, "Wait for range delete request completion interrupted"});
         throw;
     }
+}
+
+// TODO: When we have default read-snapshots (3.8?), this function can be eliminated, because only
+// queries that have asked will see range deletions.
+
+void CollectionRangeDeleter::onMaybeStartRangeDeletion(OperationContext* opCtx,
+                                                       const NamespaceString& nss,
+                                                       BSONObj const& obj,
+                                                       bool fromMigrate) {
+    if (fromMigrate || nss != NamespaceString::kConfigCollectionNamespace) {
+        return;
+    }
+    auto idElem = obj["_id"];
+    if (idElem.type() != String || idElem.str() != kStartRangeDeletion) {
+        return;
+    }
+
+    std::string shardNs;
+    invariant(bsonExtractStringField(obj, "ns", &shardNs).isOK());
+    auto shardNss = NamespaceString{shardNs};
+
+    if (repl::ReplicationCoordinator::get(opCtx)->canAcceptWritesFor(opCtx, shardNss)) {
+        return;  // secondaries only, ignore on primary or during recovery
+    }
+
+    OID epoch;
+    invariant(bsonExtractOIDField(obj, "epoch", &epoch).isOK());
+
+    BSONElement min, max;
+    invariant(bsonExtractField(obj, "min", &min).isOK());
+    invariant(bsonExtractField(obj, "max", &max).isOK());
+    invariant(min.type() == BSONType::Object);
+    invariant(max.type() == BSONType::Object);
+
+    auto range = ChunkRange{min.Obj(), max.Obj()};
+    CollectionRangeDeleter::_killDependentQueries(opCtx, shardNss, epoch, range);
+}
+
+namespace {
+
+bool queryDependsOn(CanonicalQuery const* query,
+                    std::vector<ScopedCollectionMetadata> const& overlaps,
+                    OID const& epoch) {
+    if (query == nullptr) {
+        return false;  // No query, no ShardFilterStage, no problem.
+    }
+    auto& queryRequest = query->getQueryRequest();
+
+    // Read preference "ignoreChunkMigration" means do not kill the query here.
+    if (queryRequest.hasReadPref() &&
+        queryRequest.getUnwrappedReadPref().getBoolField("ignoreChunkMigration")) {
+        return false;
+    }
+    for (auto const& scm : overlaps) {
+        if (query->usesMetadata(scm) && epoch == scm->getCollVersion().epoch())
+            return true;
+    }
+    return false;
+}
+
+}  // anonymous namespace
+
+void CollectionRangeDeleter::_killDependentQueries(OperationContext* opCtx,
+                                                   NamespaceString const& nss,
+                                                   OID const& epoch,
+                                                   ChunkRange const& range) {
+
+    AutoGetCollection autoColl(opCtx, nss, MODE_X);
+    auto* collection = autoColl.getCollection();
+    auto* css = CollectionShardingState::get(opCtx, nss);
+    if (!collection || !css->getMetadata()) {
+        // If the collection was dropped or went unsharded, queries would be killed anyway.
+        return;
+    }
+    auto* cursorManager = collection->getCursorManager();
+    auto overlaps = css->overlappingMetadata(range);  // all metadata, including snapshots
+    if (overlaps.empty()) {
+        return;
+    }
+    static const char msg[] = "Query may depend on a chunk that has migrated to another shard";
+    cursorManager->invalidateIf(opCtx, msg, [&](PlanExecutor* exec) -> bool {
+        return queryDependsOn(exec->getCanonicalQuery(), overlaps, epoch);
+    });
 }
 
 }  // namespace mongo

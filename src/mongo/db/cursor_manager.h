@@ -28,6 +28,8 @@
 
 #pragma once
 
+#include <functional>
+
 #include "mongo/db/catalog/util/partitioned.h"
 #include "mongo/db/clientcursor.h"
 #include "mongo/db/cursor_id.h"
@@ -88,10 +90,11 @@ public:
 
     /**
      * Kills all managed query executors and ClientCursors. Callers must have exclusive access to
-     * the collection (i.e. must have the collection, databse, or global resource locked in MODE_X).
+     * the collection (i.e. must have the collection, database, or global resource locked in
+     * MODE_X).
      *
-     * 'collectionGoingAway' indicates whether the Collection instance is being deleted.  This could
-     * be because the db is being closed, or the collection/db is being dropped.
+     * 'collectionGoingAway' indicates whether the Collection instance is being deleted.  This
+     * could be because the db is being closed, or the collection/db is being dropped.
      *
      * The 'reason' is the motivation for invalidating all cursors. This will be used for error
      * reporting and logging when an operation finds that the cursor it was operating on has been
@@ -100,6 +103,16 @@ public:
     void invalidateAll(OperationContext* opCtx,
                        bool collectionGoingAway,
                        const std::string& reason);
+
+    /**
+     * Kills managed query executors and ClientCursors that the predicate argument matches.
+     * Callers must have exclusive access to the collection (i.e. must have the collection,
+     * database, or global resource locked in MODE_X).
+     */
+    void invalidateIf(OperationContext*,
+                      std::string const& reason,
+                      stdx::function<bool(PlanExecutor*)> predicate,
+                      bool collectionGoingAway = false);
 
     /**
      * Broadcast a document invalidation to all relevant PlanExecutor(s).  invalidateDocument
@@ -240,4 +253,5 @@ private:
         _registeredPlanExecutors;
     std::unique_ptr<Partitioned<unordered_map<CursorId, ClientCursor*>, kNumPartitions>> _cursorMap;
 };
+
 }  // namespace mongo

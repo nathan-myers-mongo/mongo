@@ -26,6 +26,8 @@
 *    it in the license file.
 */
 
+#include <memory>
+
 #include "mongo/platform/basic.h"
 
 #include "mongo/db/op_observer_impl.h"
@@ -38,6 +40,7 @@
 #include "mongo/db/namespace_string.h"
 #include "mongo/db/operation_context.h"
 #include "mongo/db/repl/oplog.h"
+#include "mongo/db/s/collection_range_deleter.h"
 #include "mongo/db/s/collection_sharding_state.h"
 #include "mongo/db/server_options.h"
 #include "mongo/db/views/durable_view_catalog.h"
@@ -97,11 +100,15 @@ void OpObserverImpl::onInserts(OperationContext* opCtx,
         }
     }
 
-    if (strstr(nss.ns().c_str(), ".system.js")) {
+    if (nss.coll() == "system.js") {
         Scope::storedFuncMod(opCtx);
     }
     if (nss.coll() == DurableViewCatalog::viewsCollectionName()) {
         DurableViewCatalog::onExternalChange(opCtx, nss);
+    }
+
+    if (begin + 1 == end) {
+        CollectionRangeDeleter::onMaybeStartRangeDeletion(opCtx, nss, *begin, fromMigrate);
     }
 }
 
@@ -120,7 +127,7 @@ void OpObserverImpl::onUpdate(OperationContext* opCtx, const OplogUpdateEntryArg
         css->onUpdateOp(opCtx, args.updatedDoc);
     }
 
-    if (strstr(args.nss.ns().c_str(), ".system.js")) {
+    if (args.nss.coll() == "system.js") {
         Scope::storedFuncMod(opCtx);
     }
 
@@ -131,6 +138,11 @@ void OpObserverImpl::onUpdate(OperationContext* opCtx, const OplogUpdateEntryArg
     if (args.nss.ns() == FeatureCompatibilityVersion::kCollection) {
         FeatureCompatibilityVersion::onInsertOrUpdate(args.updatedDoc);
     }
+
+    // TODO: When we have default read-snapshots (3.8?), this call (and the one above) can be
+    // eliminated, because only queries that have asked will see these deletions.
+    CollectionRangeDeleter::onMaybeStartRangeDeletion(
+        opCtx, args.nss, args.updatedDoc, args.fromMigrate);
 }
 
 CollectionShardingState::DeleteState OpObserverImpl::aboutToDelete(OperationContext* opCtx,

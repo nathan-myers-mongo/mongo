@@ -162,6 +162,20 @@ public:
                                    int maxToDelete,
                                    CollectionRangeDeleter* forTestOnly = nullptr);
 
+    /**
+     * If nss is admin.config.version and opLogRecord is a "startRangeDeletion" record, *and* we are
+     * running as a secondary server, call _killDependentQueries on the collection and range the
+     * record specifies.
+     *
+     * This is meant to be called by opObserverImpl when it sees an insert or update event.
+     * TODO: When we have default read-snapshots (3.8?), this function can be eliminated, because
+     * only queries that have asked will see range deletions.
+     */
+    static void onMaybeStartRangeDeletion(OperationContext* opCtx,
+                                          const NamespaceString& nss,
+                                          BSONObj const& opLogRecord,
+                                          bool fromMigrate);
+
 private:
     /**
      * Performs the deletion of up to maxToDelete entries within the range in progress. Must be
@@ -182,6 +196,14 @@ private:
      */
     void _pop(Status status);
 
+    /**
+     * Kills queries that might depend on the documents in the range specified, preparatory to such
+     * documents being deleted by the op log observer.
+     */
+    static void _killDependentQueries(OperationContext*,
+                                      NamespaceString const&,
+                                      OID const& epoch,
+                                      ChunkRange const&);
     /**
      * Ranges scheduled for deletion.  The front of the list will be in active process of deletion.
      * As each range is completed, its notification is signaled before it is popped.

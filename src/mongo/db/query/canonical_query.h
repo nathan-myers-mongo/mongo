@@ -40,6 +40,7 @@
 namespace mongo {
 
 class OperationContext;
+class ScopedCollectionMetadata;
 
 class CanonicalQuery {
 public:
@@ -179,6 +180,17 @@ public:
         return _isIsolated;
     }
 
+    /*
+     * Records where metadata in use in the query lives.
+     */
+    void registerMetadata(ScopedCollectionMetadata const* metadata);
+
+    /*
+     * Returns true if the metadata used in the query matches the argument.
+     */
+    bool usesMetadata(ScopedCollectionMetadata const& metadata) const;
+
+
 private:
     // You must go through canonicalize to create a CanonicalQuery.
     CanonicalQuery() {}
@@ -200,6 +212,8 @@ private:
     bool _hasNoopExtensions = false;
 
     bool _isIsolated;
+
+    boost::optional<ScopedCollectionMetadata const*> _metadata;
 };
 
 }  // namespace mongo

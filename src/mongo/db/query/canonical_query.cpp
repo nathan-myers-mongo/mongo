@@ -39,6 +39,7 @@
 #include "mongo/db/query/collation/collator_factory_interface.h"
 #include "mongo/db/query/indexability.h"
 #include "mongo/db/query/query_planner_common.h"
+#include "mongo/db/s/metadata_manager.h"
 #include "mongo/util/log.h"
 
 namespace mongo {
@@ -575,6 +576,18 @@ std::string CanonicalQuery::toStringShort() const {
     }
 
     return ss;
+}
+
+void CanonicalQuery::registerMetadata(ScopedCollectionMetadata const* metadata) {
+    if (!_metadata) {
+        _metadata.emplace(metadata);
+    } else {
+        invariant(**_metadata == *metadata);
+    }
+}
+
+bool CanonicalQuery::usesMetadata(ScopedCollectionMetadata const& metadata) const {
+    return _metadata && **_metadata == metadata;
 }
 
 }  // namespace mongo

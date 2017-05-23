@@ -56,7 +56,6 @@
 #include "mongo/db/exec/text.h"
 #include "mongo/db/index/fts_access_method.h"
 #include "mongo/db/matcher/extensions_callback_real.h"
-#include "mongo/db/s/collection_sharding_state.h"
 #include "mongo/stdx/memory.h"
 #include "mongo/util/log.h"
 
@@ -67,7 +66,7 @@ using stdx::make_unique;
 
 PlanStage* buildStages(OperationContext* opCtx,
                        Collection* collection,
-                       const CanonicalQuery& cq,
+                       CanonicalQuery& cq,
                        const QuerySolution& qsol,
                        const QuerySolutionNode* root,
                        WorkingSet* ws) {
@@ -295,11 +294,7 @@ PlanStage* buildStages(OperationContext* opCtx,
             if (nullptr == childStage) {
                 return nullptr;
             }
-            return new ShardFilterStage(
-                opCtx,
-                CollectionShardingState::get(opCtx, collection->ns())->getMetadata(),
-                ws,
-                childStage);
+            return new ShardFilterStage(opCtx, &cq, ws, childStage);
         }
         case STAGE_KEEP_MUTATIONS: {
             const KeepMutationsNode* km = static_cast<const KeepMutationsNode*>(root);
@@ -385,7 +380,7 @@ PlanStage* buildStages(OperationContext* opCtx,
 // static (this one is used for Cached and MultiPlanStage)
 bool StageBuilder::build(OperationContext* opCtx,
                          Collection* collection,
-                         const CanonicalQuery& cq,
+                         CanonicalQuery& cq,
                          const QuerySolution& solution,
                          WorkingSet* wsIn,
                          PlanStage** rootOut) {
