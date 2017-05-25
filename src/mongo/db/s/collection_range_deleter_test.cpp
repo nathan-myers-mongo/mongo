@@ -65,7 +65,7 @@ class CollectionRangeDeleterTest : public ShardingMongodTestFixture {
 protected:
     bool next(CollectionRangeDeleter& rangeDeleter, int maxToDelete) {
         return CollectionRangeDeleter::cleanUpNextRange(
-            operationContext(), kNss, maxToDelete, &rangeDeleter);
+            operationContext(), kNss, CollectionRangeDeleter::kMore, maxToDelete, &rangeDeleter);
     }
     std::shared_ptr<RemoteCommandTargeterMock> configTargeter() {
         return RemoteCommandTargeterMock::get(shardRegistry()->getConfigShard()->getTargeter());

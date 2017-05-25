@@ -44,6 +44,9 @@
 #include "mongo/db/index/index_descriptor.h"
 #include "mongo/db/keypattern.h"
 #include "mongo/db/operation_context.h"
+#include "mongo/db/ops/update.h"
+#include "mongo/db/ops/update_request.h"
+#include "mongo/db/ops/update_result.h"
 #include "mongo/db/query/internal_plans.h"
 #include "mongo/db/query/query_knobs.h"
 #include "mongo/db/query/query_planner.h"
@@ -76,13 +79,42 @@ const WriteConcernOptions kMajorityWriteConcern(WriteConcernOptions::kMajority,
 CollectionRangeDeleter::~CollectionRangeDeleter() {
     // notify anybody still sleeping on orphan ranges
     clear(Status{ErrorCodes::InterruptedDueToReplStateChange,
-                 "Collection sharding metadata destroyed"});
+                 "Collection sharding metadata discarded"});
 }
 
-bool CollectionRangeDeleter::cleanUpNextRange(OperationContext* opCtx,
+namespace {
+
+// Secondaries will watch for this update, and kill any queries that may depend on documents in the
+// target range unless they have specifically asked to be left running.
+
+void writeStartRangeDeletionToOpLog(OperationContext* opCtx,
+                                    NamespaceString const& nss,
+                                    CollectionShardingState* css,
+                                    ChunkRange const& range) {
+    UpdateRequest updateReq(NamespaceString::kConfigCollectionNamespace);  // admin.system.version
+    updateReq.setUpsert();
+    // clang-format off
+    updateReq.setQuery(BSON("_id" << "startRangeDeletion" << "nss" << nss.ns()
+        << "epoch" << css->getMetadata()->getCollVersion().epoch().toString()
+        << "min" << range.getMin().toString() << "max" << range.getMax().toString()));
+    // clang-format on
+    AutoGetOrCreateDb autoDb(opCtx, NamespaceString::kConfigCollectionNamespace.db(), MODE_X);
+    auto result = update(opCtx, autoDb.getDb(), updateReq);
+    if (result.numDocsModified == 0) {
+        warning() << "Failed to append " << nss.ns() << " startRangeDeletion record to op log";
+        throw DBException("upsert on admin.system.version failed", ErrorCodes::InternalError);
+    }
+}
+
+}  // anonymous namespace
+
+auto CollectionRangeDeleter::cleanUpNextRange(OperationContext* opCtx,
                                               NamespaceString const& nss,
+                                              Action action,
                                               int maxToDelete,
-                                              CollectionRangeDeleter* rangeDeleterForTestOnly) {
+                                              CollectionRangeDeleter* forTestOnly) -> Action {
+
+    dassert(action != kFinished);
     StatusWith<int> wrote = 0;
     auto range = boost::optional<ChunkRange>(boost::none);
     auto notification = DeleteNotification();
@@ -97,22 +129,37 @@ bool CollectionRangeDeleter::cleanUpNextRange(OperationContext* opCtx,
                       << " left over from sharded state";
                 stdx::lock_guard<stdx::mutex> lk(css->_metadataManager->_managerLock);
                 css->_metadataManager->_clearAllCleanups();
-                return false;  // collection was unsharded
+                return kFinished;  // collection was unsharded or dropped or something
             }
 
             // We don't actually know if this is the same collection that we were originally
             // scheduled to do deletions on, or another one with the same name. But it doesn't
             // matter: if it has deletions scheduled, now is as good a time as any to do them.
-            auto self = rangeDeleterForTestOnly ? rangeDeleterForTestOnly
-                                                : &css->_metadataManager->_rangesToClean;
+
+            auto self = forTestOnly ? forTestOnly : &css->_metadataManager->_rangesToClean;
             {
                 stdx::lock_guard<stdx::mutex> scopedLock(css->_metadataManager->_managerLock);
                 if (self->isEmpty())
-                    return false;
+                    return kFinished;
 
                 const auto& frontRange = self->_orphans.front().range;
                 range.emplace(frontRange.getMin().getOwned(), frontRange.getMax().getOwned());
                 notification = self->_orphans.front().notification;
+            }
+            dassert(range);
+
+            if (action == kWriteOpLog) {
+                try {
+                    writeStartRangeDeletionToOpLog(opCtx, nss, css, *range);
+                } catch (DBException const& e) {
+                    Status s{ErrorCodes::fromInt(e.getCode()),
+                             str::stream() << "cannot push startRangeDeletion record to Op Log, "
+                                           << e.what()
+                                           << ", abandoning scheduled range deletions"};
+                    stdx::lock_guard<stdx::mutex> scopedLock(css->_metadataManager->_managerLock);
+                    css->_metadataManager->_clearAllCleanups(s);
+                    return kFinished;
+                }
             }
 
             try {
@@ -123,7 +170,6 @@ bool CollectionRangeDeleter::cleanUpNextRange(OperationContext* opCtx,
                 wrote = e.toStatus();
                 warning() << e.what();
             }
-
             if (!wrote.isOK() || wrote.getValue() == 0) {
                 if (wrote.isOK()) {
                     log() << "No documents remain to delete in " << nss << " range "
@@ -131,7 +177,7 @@ bool CollectionRangeDeleter::cleanUpNextRange(OperationContext* opCtx,
                 }
                 stdx::lock_guard<stdx::mutex> scopedLock(css->_metadataManager->_managerLock);
                 self->_pop(wrote.getStatus());
-                return true;
+                return kWriteOpLog;
             }
         }  // drop scopedCollectionMetadata
     }      // drop autoColl
@@ -174,7 +220,7 @@ bool CollectionRangeDeleter::cleanUpNextRange(OperationContext* opCtx,
     }
 
     notification.abandon();
-    return true;
+    return kMore;
 }
 
 StatusWith<int> CollectionRangeDeleter::_doDeletion(OperationContext* opCtx,

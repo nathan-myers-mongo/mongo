@@ -96,6 +96,8 @@ public:
         DeleteNotification notification{};
     };
 
+    enum Action { kFinished, kMore, kWriteOpLog };
+
     CollectionRangeDeleter() = default;
     ~CollectionRangeDeleter();
 
@@ -150,10 +152,11 @@ public:
      * Returns true if it should be scheduled to run again because there might be more documents to
      * delete, or false otherwise.
      */
-    static bool cleanUpNextRange(OperationContext*,
-                                 NamespaceString const& nss,
-                                 int maxToDelete,
-                                 CollectionRangeDeleter* rangeDeleterForTestOnly = nullptr);
+    static Action cleanUpNextRange(OperationContext*,
+                                   NamespaceString const& nss,
+                                   Action,
+                                   int maxToDelete,
+                                   CollectionRangeDeleter* rangeDeleterForTestOnly = nullptr);
 
 private:
     /**

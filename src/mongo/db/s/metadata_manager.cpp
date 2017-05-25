@@ -118,13 +118,17 @@ MetadataManager::~MetadataManager() {
 }
 
 void MetadataManager::_clearAllCleanups() {
+    _clearAllCleanups(
+        {ErrorCodes::InterruptedDueToReplStateChange,
+         str::stream() << "Range deletions in " << _nss.ns()
+                       << " abandoned because collection was dropped or became unsharded"});
+}
+
+void MetadataManager::_clearAllCleanups(Status status) {
     for (auto& metadata : _metadata) {
         _pushListToClean(std::move(metadata->_tracker.orphans));
     }
-    _rangesToClean.clear({ErrorCodes::InterruptedDueToReplStateChange,
-                          str::stream() << "Range deletions in " << _nss.ns()
-                                        << " abandoned because collection was"
-                                           "  dropped or became unsharded"});
+    _rangesToClean.clear(status);
 }
 
 ScopedCollectionMetadata MetadataManager::getActiveMetadata(std::shared_ptr<MetadataManager> self) {
@@ -342,15 +346,17 @@ void MetadataManager::append(BSONObjBuilder* builder) {
     amrArr.done();
 }
 
-void MetadataManager::_scheduleCleanup(executor::TaskExecutor* executor, NamespaceString nss) {
-    executor->scheduleWork([executor, nss](auto&) {
+void MetadataManager::_scheduleCleanup(executor::TaskExecutor* executor,
+                                       NamespaceString nss,
+                                       CollectionRangeDeleter::Action action) {
+    executor->scheduleWork([executor, nss, action](auto&) {
         const int maxToDelete = std::max(int(internalQueryExecYieldIterations.load()), 1);
         Client::initThreadIfNotAlready("Collection Range Deleter");
         auto UniqueOpCtx = Client::getCurrent()->makeOperationContext();
         auto opCtx = UniqueOpCtx.get();
-        bool again = CollectionRangeDeleter::cleanUpNextRange(opCtx, nss, maxToDelete);
-        if (again) {
-            _scheduleCleanup(executor, nss);
+        auto next = CollectionRangeDeleter::cleanUpNextRange(opCtx, nss, action, maxToDelete);
+        if (next != CollectionRangeDeleter::kFinished) {
+            _scheduleCleanup(executor, nss, next);
         }
     });
 }
@@ -365,7 +371,7 @@ auto MetadataManager::_pushRangeToClean(ChunkRange const& range) -> CleanupNotif
 
 void MetadataManager::_pushListToClean(std::list<Deletion> ranges) {
     if (_rangesToClean.add(std::move(ranges))) {
-        _scheduleCleanup(_executor, _nss);
+        _scheduleCleanup(_executor, _nss, CollectionRangeDeleter::kWriteOpLog);
     }
     dassert(ranges.empty());
 }
@@ -440,6 +446,25 @@ auto MetadataManager::cleanUpRange(ChunkRange const& range) -> CleanupNotificati
           << " for deletion after all possibly-dependent queries finish";
 
     return activeMetadata->_tracker.orphans.back().notification;
+}
+
+auto MetadataManager::overlappingMetadata(std::shared_ptr<MetadataManager> self,
+                                          ChunkRange const& range)
+    -> std::vector<ScopedCollectionMetadata> {
+    invariant(!_metadata.empty());
+    stdx::lock_guard<stdx::mutex> scopedLock(_managerLock);
+    std::vector<ScopedCollectionMetadata> result(_metadata.size());
+    auto it = _metadata.crbegin();
+    if ((*it)->rangeOverlapsChunk(range)) {
+        // The active metadata is assumed to be in use.
+        result.push_back(ScopedCollectionMetadata(std::move(self), *it));
+    }
+    for (auto end = _metadata.crend(); it != end; ++it) {
+        if ((*it)->_tracker.usageCounter > 0 && (*it)->rangeOverlapsChunk(range)) {
+            result.push_back(ScopedCollectionMetadata(std::move(self), *it));
+        }
+    }
+    return result;
 }
 
 size_t MetadataManager::numberOfRangesToCleanStillInUse() {
