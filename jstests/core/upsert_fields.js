@@ -172,7 +172,6 @@ for (var i = 0; i < 3; i++) {
     assert.writeError(upsertedResult({x: undefined}, expr));
 
     if (!isReplStyle) {
-        assert.writeError(upsertedResult({x: {'x.x': 1}}, expr));
         assert.writeError(upsertedResult({x: {$all: [1, 2]}}, expr));
         assert.writeError(upsertedResult({$and: [{x: 1}, {x: 1}]}, expr));
         assert.writeError(upsertedResult({$and: [{x: {$eq: 1}}, {x: 2}]}, expr));
