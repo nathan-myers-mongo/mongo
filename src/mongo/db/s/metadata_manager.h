@@ -282,11 +282,14 @@ public:
      */
     operator bool() const;
 
-    friend bool operator==(ScopedCollectionMetadata const& a, ScopedCollectionMetadata const& b) {
-        return a._metadata == b._metadata;
+    /**
+     * Checks whether both objects refer to the identically the same metadata.
+     */
+    bool operator==(ScopedCollectionMetadata const& other) {
+        return _metadata == other._metadata;
     }
-    friend bool operator!=(ScopedCollectionMetadata const& a, ScopedCollectionMetadata const& b) {
-        return a._metadata != b._metadata;
+    bool operator!=(ScopedCollectionMetadata const& other) {
+        return _metadata != other._metadata;
     }
 
 

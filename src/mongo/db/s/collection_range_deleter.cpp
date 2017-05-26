@@ -84,9 +84,6 @@ CollectionRangeDeleter::~CollectionRangeDeleter() {
 
 namespace {
 
-// Secondaries will watch for this update, and kill any queries that may depend on documents in the
-// target range unless they have specifically asked to be left running.
-
 void writeStartRangeDeletionToOpLog(OperationContext* opCtx,
                                     NamespaceString const& nss,
                                     CollectionShardingState* css,
@@ -94,9 +91,6 @@ void writeStartRangeDeletionToOpLog(OperationContext* opCtx,
     UpdateRequest updateReq(NamespaceString::kConfigCollectionNamespace);  // admin.system.version
     updateReq.setUpsert();
     // clang-format off
-    updateReq.setQuery(BSON("_id" << "startRangeDeletion" << "nss" << nss.ns()
-        << "epoch" << css->getMetadata()->getCollVersion().epoch().toString()
-        << "min" << range.getMin().toString() << "max" << range.getMax().toString()));
     // clang-format on
     AutoGetOrCreateDb autoDb(opCtx, NamespaceString::kConfigCollectionNamespace.db(), MODE_X);
     auto result = update(opCtx, autoDb.getDb(), updateReq);
@@ -114,7 +108,7 @@ auto CollectionRangeDeleter::cleanUpNextRange(OperationContext* opCtx,
                                               int maxToDelete,
                                               CollectionRangeDeleter* forTestOnly) -> Action {
 
-    dassert(action != kFinished);
+    invariant(action != kFinished);
     StatusWith<int> wrote = 0;
     auto range = boost::optional<ChunkRange>(boost::none);
     auto notification = DeleteNotification();
@@ -124,7 +118,7 @@ auto CollectionRangeDeleter::cleanUpNextRange(OperationContext* opCtx,
         auto* css = CollectionShardingState::get(opCtx, nss);
         {
             auto scopedCollectionMetadata = css->getMetadata();
-            if ((!collection || !scopedCollectionMetadata) && !rangeDeleterForTestOnly) {
+            if ((!collection || !scopedCollectionMetadata) && !forTestOnly) {
                 log() << "Abandoning range deletions in collection " << nss.ns()
                       << " left over from sharded state";
                 stdx::lock_guard<stdx::mutex> lk(css->_metadataManager->_managerLock);
@@ -146,20 +140,31 @@ auto CollectionRangeDeleter::cleanUpNextRange(OperationContext* opCtx,
                 range.emplace(frontRange.getMin().getOwned(), frontRange.getMax().getOwned());
                 notification = self->_orphans.front().notification;
             }
-            dassert(range);
+            invariant(range);
 
             if (action == kWriteOpLog) {
+                // clang-format off
+                // Secondaries will watch for this update, and kill any queries that may depend on
+                // documents in the range, except those with a write concern option
+                // 'ignoreChunkMigration'
                 try {
-                    writeStartRangeDeletionToOpLog(opCtx, nss, css, *range);
+                    auto& adminSystemVersion = NamespaceString::kConfigCollectionNamespace;
+                    auto epoch = scopedCollectionMetadata->getCollVersion().epoch();
+                    AutoGetCollection autoAdmin(opCtx, adminSystemVersion, MODE_IX);
+
+                    Helpers::upsert(opCtx, adminSystemVersion.ns(), 
+                        BSON("_id" << "startRangeDeletion" << "ns" << nss << "epoch" << epoch
+                          << "min" << range->getMin() << "max" << range->getMax()));
+
                 } catch (DBException const& e) {
-                    Status s{ErrorCodes::fromInt(e.getCode()),
-                             str::stream() << "cannot push startRangeDeletion record to Op Log, "
-                                           << e.what()
-                                           << ", abandoning scheduled range deletions"};
                     stdx::lock_guard<stdx::mutex> scopedLock(css->_metadataManager->_managerLock);
-                    css->_metadataManager->_clearAllCleanups(s);
+                    css->_metadataManager->_clearAllCleanups(
+                        {ErrorCodes::fromInt(e.getCode()),
+                         str::stream() << "cannot push startRangeDeletion record to Op Log, "
+                                       << e.what() << ", abandoning scheduled range deletions"});
                     return kFinished;
                 }
+                // clang-format on
             }
 
             try {
