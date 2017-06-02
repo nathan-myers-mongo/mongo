@@ -246,7 +246,7 @@ PlanStage::StageState TextOrStage::returnResults(WorkingSetID* out) {
     WorkingSetMember* wsm = _ws->get(textRecordData.wsid);
 
     // Populate the working set member with the text score and return it.
-    wsm->addComputed(new TextScoreComputedData(textRecordData.score));
+    wsm->addComputed(stdx::make_unique<TextScoreComputedData>(textRecordData.score));
     *out = textRecordData.wsid;
     return PlanStage::ADVANCED;
 }

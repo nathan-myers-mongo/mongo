@@ -118,7 +118,8 @@ boost::optional<IndexKeyEntry> IndexScan::initIndexScan() {
             _indexCursor->setEndPosition(_endKey, _endKeyInclusive);
             return _indexCursor->seek(_startKey, _startKeyInclusive);
         } else {
-            _checker.reset(new IndexBoundsChecker(&_params.bounds, _keyPattern, _params.direction));
+            _checker = stdx::make_unique<IndexBoundsChecker>(
+                &_params.bounds, _keyPattern, _params.direction);
 
             if (!_checker->getStartSeekPoint(&_seekPoint))
                 return boost::none;
@@ -229,7 +230,7 @@ PlanStage::StageState IndexScan::doWork(WorkingSetID* out) {
     if (_params.addKeyMetadata) {
         BSONObjBuilder bob;
         bob.appendKeys(_keyPattern, kv->key);
-        member->addComputed(new IndexKeyComputedData(bob.obj()));
+        member->addComputed(stdx::make_unique<IndexKeyComputedData>(bob.obj()));
     }
 
     *out = id;

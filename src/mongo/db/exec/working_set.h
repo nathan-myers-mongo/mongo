@@ -304,7 +304,7 @@ public:
 
     bool hasComputed(const WorkingSetComputedDataType type) const;
     const WorkingSetComputedData* getComputed(const WorkingSetComputedDataType type) const;
-    void addComputed(WorkingSetComputedData* data);
+    void addComputed(std::unique_ptr<WorkingSetComputedData> data);
 
     //
     // Fetching

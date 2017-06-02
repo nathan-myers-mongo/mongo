@@ -53,7 +53,8 @@ public:
         typedef WorkingSetComputedDataType WSCD;
         for (WSCD i = WSCD(0); i < WSM_COMPUTED_NUM_TYPES; i = WSCD(i + 1)) {
             if (!dest->hasComputed(i) && src.hasComputed(i)) {
-                dest->addComputed(src.getComputed(i)->clone());
+                dest->addComputed(std::unique_ptr<WorkingSetComputedData>(
+                    src.getComputed(i)->clone()));
             }
         }
 

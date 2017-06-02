@@ -88,7 +88,7 @@ SortStage::SortStage(OperationContext* opCtx,
     // fetching from the child stage.
     if (_limit > 1) {
         const WorkingSetComparator& cmp = *_sortKeyComparator;
-        _dataSet.reset(new SortableDataItemSet(cmp));
+        _dataSet = stdx::make_unique<SortableDataItemSet>(cmp);
     }
 }
 

@@ -92,7 +92,7 @@ void testTransform(const char* specStr,
     WorkingSetMember wsm;
     wsm.obj = Snapshotted<BSONObj>(SnapshotId(), fromjson(objStr));
     if (data) {
-        wsm.addComputed(data);
+        wsm.addComputed(std::unique_ptr<WorkingSetComputedData>(data));
     }
     wsm.transitionToOwnedObj();
 
@@ -166,7 +166,7 @@ BSONObj transformMetaSortKeyCovered(const BSONObj& sortKey,
     WorkingSetID wsid = ws.allocate();
     WorkingSetMember* wsm = ws.get(wsid);
     wsm->keyData.push_back(ikd);
-    wsm->addComputed(new SortKeyComputedData(sortKey));
+    wsm->addComputed(std::make_unique<SortKeyComputedData>(sortKey));
     ws.transitionToRecordIdAndIdx(wsid);
 
     ProjectionExec projExec(

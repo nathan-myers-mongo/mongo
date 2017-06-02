@@ -83,7 +83,7 @@ struct StoredGeometry {
         if (!element.isABSONObj())
             return NULL;
 
-        unique_ptr<StoredGeometry> stored(new StoredGeometry);
+        unique_ptr<StoredGeometry> stored(stdx::make_unique<StoredGeometry>());
 
         // GeoNear stage can only be run with an existing index
         // Therefore, it is always safe to skip geometry validation
@@ -190,14 +190,15 @@ static StatusWith<double> computeGeoNearDistance(const GeoNearParams& nearParams
             // Hack for nearSphere
             // TODO: Remove nearSphere?
             invariant(SPHERE == queryCRS);
-            member->addComputed(new GeoDistanceComputedData(minDistance / kRadiusOfEarthInMeters));
+            member->addComputed(stdx::make_unique<GeoDistanceComputedData>(
+                        minDistance / kRadiusOfEarthInMeters));
         } else {
-            member->addComputed(new GeoDistanceComputedData(minDistance));
+            member->addComputed(stdx::make_unique<GeoDistanceComputedData>(minDistance));
         }
     }
 
     if (nearParams.addPointMeta) {
-        member->addComputed(new GeoNearPointComputedData(minDistanceObj));
+        member->addComputed(stdx::make_unique<GeoNearPointComputedData>(minDistanceObj));
     }
 
     return StatusWith<double>(minDistance);
@@ -282,7 +283,7 @@ GeoNear2DStage::DensityEstimator::DensityEstimator(PlanStage::Children* children
     // The index status should always be valid.
     invariant(status.isOK());
 
-    _converter.reset(new GeoHashConverter(hashParams));
+    _converter = stdx::make_unique<GeoHashConverter>(hashParams);
     _centroidCell = _converter->hash(_nearParams->nearQuery->centroid->oldPoint);
 
     // Since appendVertexNeighbors(level, output) requires level < hash.getBits(),
@@ -332,8 +333,9 @@ void GeoNear2DStage::DensityEstimator::buildIndexScan(OperationContext* opCtx,
     IndexBoundsBuilder::intersectize(oil, &scanParams.bounds.fields[twoDFieldPosition]);
 
     invariant(!_indexScan);
-    _indexScan = new IndexScan(opCtx, scanParams, workingSet, NULL);
-    _children->emplace_back(_indexScan);
+    auto indexScan = stdx::make_unique<IndexScan>(opCtx, scanParams, workingSet, nullptr);
+    _indexScan = indexScan.get();
+    _children->emplace_back(std::move(indexScan));
 }
 
 // Return IS_EOF is we find a document in it's ancestor cells and set estimated distance
@@ -652,15 +654,15 @@ StatusWith<NearStage::CoveredInterval*>  //
         }
 
         // *Always* adjust the covering bounds to be more inclusive
-        coverRegion.reset(new R2Annulus(nextBounds.center(),
+        coverRegion = stdx::make_unique<R2Annulus>(nextBounds.center(),
                                         max(0.0, nextBounds.getInner() - epsilon),
-                                        nextBounds.getOuter() + epsilon));
+                                        nextBounds.getOuter() + epsilon);
     } else {
         invariant(SPHERE == queryCRS);
         // TODO: As above, make this consistent with $within : $centerSphere
 
         // Our intervals aren't in the same CRS as our index, so we need to adjust them
-        coverRegion.reset(new R2Annulus(projectBoundsToTwoDDegrees(nextBounds)));
+        coverRegion = stdx::make_unique<R2Annulus>(projectBoundsToTwoDDegrees(nextBounds));
     }
 
     //
@@ -872,8 +874,9 @@ void GeoNear2DSphereStage::DensityEstimator::buildIndexScan(OperationContext* op
 
     // Index scan
     invariant(!_indexScan);
-    _indexScan = new IndexScan(opCtx, scanParams, workingSet, NULL);
-    _children->emplace_back(_indexScan);
+    auto indexScan = stdx::make_unique<IndexScan>(opCtx, scanParams, workingSet, nullptr);
+    _indexScan = indexScan.get();
+    _children->emplace_back(std::move(_indexScan));
 }
 
 PlanStage::StageState GeoNear2DSphereStage::DensityEstimator::work(OperationContext* opCtx,

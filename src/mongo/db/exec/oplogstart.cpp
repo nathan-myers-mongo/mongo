@@ -62,7 +62,8 @@ PlanStage::StageState OplogStart::doWork(WorkingSetID* out) {
         CollectionScanParams params;
         params.collection = _collection;
         params.direction = CollectionScanParams::BACKWARD;
-        _children.emplace_back(new CollectionScan(getOpCtx(), params, _workingSet, NULL));
+        _children.emplace_back(
+            std::make_unique<CollectionScan>(getOpCtx(), params, _workingSet, nullptr));
 
         _needInit = false;
         _backwardsScanning = true;

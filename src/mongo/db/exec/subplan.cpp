@@ -292,7 +292,7 @@ Status tagOrChildAccordingToCache(PlanCacheIndexTree* compositeCacheData,
 
 Status SubplanStage::choosePlanForSubqueries(PlanYieldPolicy* yieldPolicy) {
     // This is the skeleton of index selections that is inserted into the cache.
-    std::unique_ptr<PlanCacheIndexTree> cacheData(new PlanCacheIndexTree());
+    auto cacheData = stdx::make_unique<PlanCacheIndexTree>();
 
     for (size_t i = 0; i < _orExpression->numChildren(); ++i) {
         MatchExpression* orChild = _orExpression->getChild(i);
@@ -472,7 +472,7 @@ Status SubplanStage::choosePlanWholeQuery(PlanYieldPolicy* yieldPolicy) {
         // Many solutions. Create a MultiPlanStage to pick the best, update the cache,
         // and so on. The working set will be shared by all candidate plans.
         invariant(_children.empty());
-        _children.emplace_back(new MultiPlanStage(getOpCtx(), _collection, _query));
+        _children.emplace_back(stdx::make_unique<MultiPlanStage>(getOpCtx(), _collection, _query));
         MultiPlanStage* multiPlanStage = static_cast<MultiPlanStage*>(child().get());
 
         for (size_t ix = 0; ix < solutions.size(); ++ix) {

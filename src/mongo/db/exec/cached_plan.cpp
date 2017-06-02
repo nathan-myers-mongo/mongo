@@ -253,8 +253,8 @@ Status CachedPlanStage::replan(PlanYieldPolicy* yieldPolicy, bool shouldCache) {
     // and so on. The working set will be shared by all candidate plans.
     auto cachingMode = shouldCache ? MultiPlanStage::CachingMode::AlwaysCache
                                    : MultiPlanStage::CachingMode::NeverCache;
-    _children.emplace_back(
-        new MultiPlanStage(getOpCtx(), _collection, _canonicalQuery, cachingMode));
+    _children.emplace_back(stdx::make_unique<MultiPlanStage>(
+        getOpCtx(), _collection, _canonicalQuery, cachingMode));
     MultiPlanStage* multiPlanStage = static_cast<MultiPlanStage*>(child().get());
 
     for (size_t ix = 0; ix < solutions.size(); ++ix) {

@@ -180,7 +180,7 @@ PlanStage::StageState IDHackStage::advance(WorkingSetID id,
         BSONObjBuilder bob;
         BSONObj ownedKeyObj = member->obj.value()["_id"].wrap().getOwned();
         bob.appendKeys(_key, ownedKeyObj);
-        member->addComputed(new IndexKeyComputedData(bob.obj()));
+        member->addComputed(stdx::make_unique<IndexKeyComputedData>(bob.obj()));
     }
 
     _done = true;

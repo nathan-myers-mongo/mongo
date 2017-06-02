@@ -228,7 +228,7 @@ Status MultiPlanStage::pickBestPlan(PlanYieldPolicy* yieldPolicy) {
 
     // After picking best plan, ranking will own plan stats from
     // candidate solutions (winner and losers).
-    std::unique_ptr<PlanRankingDecision> ranking(new PlanRankingDecision);
+    auto ranking = stdx::make_unique<PlanRankingDecision>();
     _bestPlanIdx = PlanRanker::pickBestPlan(_candidates, ranking.get());
     verify(_bestPlanIdx >= 0 && _bestPlanIdx < static_cast<int>(_candidates.size()));
 

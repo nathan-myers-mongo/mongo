@@ -102,13 +102,15 @@ SortKeyGenerator::SortKeyGenerator(OperationContext* opCtx,
         fixed.push_back(BSONElement());
     }
 
-    _keyGen.reset(new BtreeKeyGeneratorV1(fieldNames, fixed, false /* not sparse */, _collator));
+    _keyGen = stdx::make_unique<BtreeKeyGeneratorV1>(
+        fieldNames, fixed, false /* not sparse */, _collator);
 
     // The bounds checker only works on the Btree part of the sort key.
     getBoundsForSort(opCtx, queryObj, _btreeObj);
 
     if (_hasBounds) {
-        _boundsChecker.reset(new IndexBoundsChecker(&_bounds, _btreeObj, 1 /* == order */));
+        _boundsChecker = stdx::make_unique<IndexBoundsChecker>(
+            &_bounds, _btreeObj, 1 /* == order */);
     }
 }
 
@@ -332,7 +334,7 @@ PlanStage::StageState SortKeyGeneratorStage::doWork(WorkingSetID* out) {
         }
 
         // Add the sort key to the WSM as computed data.
-        member->addComputed(new SortKeyComputedData(sortKey));
+        member->addComputed(stdx::make_unique<SortKeyComputedData>(sortKey));
 
         return PlanStage::ADVANCED;
     }

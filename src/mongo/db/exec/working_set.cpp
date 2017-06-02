@@ -188,9 +188,9 @@ const WorkingSetComputedData* WorkingSetMember::getComputed(
     return _computed[type].get();
 }
 
-void WorkingSetMember::addComputed(WorkingSetComputedData* data) {
+void WorkingSetMember::addComputed(std::unique_ptr<WorkingSetComputedData> data) {
     verify(!hasComputed(data->type()));
-    _computed[data->type()].reset(data);
+    _computed[data->type()] = std::move(data);
 }
 
 void WorkingSetMember::setFetcher(RecordFetcher* fetcher) {
