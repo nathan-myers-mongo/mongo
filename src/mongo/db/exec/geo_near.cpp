@@ -266,6 +266,31 @@ static R2Annulus twoDDistanceBounds(const GeoNearParams& nearParams,
     return fullBounds;
 }
 
+GeoNear2DStage::DensityEstimator::DensityEstimator(PlanStage::Children* children,
+                                                   const IndexDescriptor* twoDindex,
+                                                   const GeoNearParams* nearParams,
+                                                   const R2Annulus& fullBounds)
+    : _children(children),
+      _twoDIndex(twoDindex),
+      _nearParams(nearParams),
+      _fullBounds(fullBounds),
+      _currentLevel(0) {
+
+    GeoHashConverter::Parameters hashParams;
+    Status status = GeoHashConverter::parseParameters(_twoDIndex->infoObj(), &hashParams);
+
+    // The index status should always be valid.
+    invariant(status.isOK());
+
+    _converter.reset(new GeoHashConverter(hashParams));
+    _centroidCell = _converter->hash(_nearParams->nearQuery->centroid->oldPoint);
+
+    // Since appendVertexNeighbors(level, output) requires level < hash.getBits(),
+    // we have to start to find documents at most GeoHash::kMaxBits - 1. Thus the finest
+    // search area is 16 * finest cell area at GeoHash::kMaxBits.
+    _currentLevel = std::max(0u, hashParams.bits - 1u);
+}
+
 // Initialize the internal states
 void GeoNear2DStage::DensityEstimator::buildIndexScan(OperationContext* opCtx,
                                                       WorkingSet* workingSet,
@@ -393,8 +418,8 @@ PlanStage::StageState GeoNear2DStage::initialize(OperationContext* opCtx,
                                                  Collection* collection,
                                                  WorkingSetID* out) {
     if (!_densityEstimator) {
-        _densityEstimator.reset(
-            new DensityEstimator(&_children, _twoDIndex, &_nearParams, _fullBounds));
+        _densityEstimator = stdx::make_unique<DensityEstimator>(
+            &_children, _twoDIndex, &_nearParams, _fullBounds);
     }
 
     double estimatedDistance;
@@ -799,7 +824,25 @@ S2Region* buildS2Region(const R2Annulus& sphereBounds) {
 }
 }
 
-// Setup the index scan stage for neighbors at this level.
+GeoNear2DSphereStage::DensityEstimator::DensityEstimator(PlanStage::Children* children,
+                                                         const IndexDescriptor* s2Index,
+                                                         const GeoNearParams* nearParams,
+                                                         const S2IndexingParams& indexParams,
+                                                         const R2Annulus& fullBounds)
+    : _children(children),
+      _s2Index(s2Index),
+      _nearParams(nearParams),
+      _indexParams(indexParams),
+      _fullBounds(fullBounds),
+      _currentLevel(0) {
+
+    // cellId.AppendVertexNeighbors(level, output) requires level < finest,
+    // so we use the minimum of max_level - 1 and the user specified finest
+    int level = std::min(S2::kMaxCellLevel - 1, internalQueryS2GeoFinestLevel.load());
+    _currentLevel = std::max(0, level);
+}
+
+// Set up the index scan stage for neighbors at this level.
 void GeoNear2DSphereStage::DensityEstimator::buildIndexScan(OperationContext* opCtx,
                                                             WorkingSet* workingSet,
                                                             Collection* collection) {
@@ -916,8 +959,8 @@ PlanStage::StageState GeoNear2DSphereStage::initialize(OperationContext* opCtx,
                                                        Collection* collection,
                                                        WorkingSetID* out) {
     if (!_densityEstimator) {
-        _densityEstimator.reset(
-            new DensityEstimator(&_children, _s2Index, &_nearParams, _indexParams, _fullBounds));
+        _densityEstimator = stdx::make_unique<DensityEstimator>(
+            &_children, _s2Index, &_nearParams, _indexParams, _fullBounds);
     }
 
     double estimatedDistance;

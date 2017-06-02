@@ -104,31 +104,12 @@ private:
     // Keeps track of the region that has already been scanned
     R2CellUnion _scannedCells;
 
-
     class DensityEstimator {
     public:
         DensityEstimator(PlanStage::Children* children,
                          const IndexDescriptor* twoDindex,
                          const GeoNearParams* nearParams,
-                         const R2Annulus& fullBounds)
-            : _children(children),
-              _twoDIndex(twoDindex),
-              _nearParams(nearParams),
-              _fullBounds(fullBounds),
-              _currentLevel(0) {
-            GeoHashConverter::Parameters hashParams;
-            Status status = GeoHashConverter::parseParameters(_twoDIndex->infoObj(), &hashParams);
-            // The index status should always be valid.
-            invariant(status.isOK());
-
-            _converter.reset(new GeoHashConverter(hashParams));
-            _centroidCell = _converter->hash(_nearParams->nearQuery->centroid->oldPoint);
-
-            // Since appendVertexNeighbors(level, output) requires level < hash.getBits(),
-            // we have to start to find documents at most GeoHash::kMaxBits - 1. Thus the finest
-            // search area is 16 * finest cell area at GeoHash::kMaxBits.
-            _currentLevel = std::max(0u, hashParams.bits - 1u);
-        }
+                         const R2Annulus& fullBounds);
 
         PlanStage::StageState work(OperationContext* opCtx,
                                    WorkingSet* workingSet,
@@ -207,18 +188,7 @@ private:
                          const IndexDescriptor* s2Index,
                          const GeoNearParams* nearParams,
                          const S2IndexingParams& indexParams,
-                         const R2Annulus& fullBounds)
-            : _children(children),
-              _s2Index(s2Index),
-              _nearParams(nearParams),
-              _indexParams(indexParams),
-              _fullBounds(fullBounds),
-              _currentLevel(0) {
-            // cellId.AppendVertexNeighbors(level, output) requires level < finest,
-            // so we use the minimum of max_level - 1 and the user specified finest
-            int level = std::min(S2::kMaxCellLevel - 1, internalQueryS2GeoFinestLevel.load());
-            _currentLevel = std::max(0, level);
-        }
+                         const R2Annulus& fullBounds);
 
         // Search for a document in neighbors at current level.
         // Return IS_EOF is such document exists and set the estimated distance to the nearest doc.
