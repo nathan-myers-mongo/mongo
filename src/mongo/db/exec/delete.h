@@ -88,7 +88,7 @@ public:
                 const DeleteStageParams& params,
                 WorkingSet* ws,
                 Collection* collection,
-                PlanStage* child);
+                std::unique_ptr<PlanStage> child);
 
     bool isEOF() final;
     StageState doWork(WorkingSetID* out) final;

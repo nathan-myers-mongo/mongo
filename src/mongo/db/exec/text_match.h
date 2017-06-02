@@ -64,7 +64,7 @@ public:
                    WorkingSet* ws);
     ~TextMatchStage();
 
-    void addChild(PlanStage* child);
+    void addChild(std::unique_ptr<PlanStage> child);
 
     bool isEOF() final;
 

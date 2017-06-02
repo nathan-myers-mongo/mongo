@@ -61,7 +61,7 @@ public:
                    WorkingSet* ws,
                    const Collection* collection);
 
-    void addChild(PlanStage* child);
+    void addChild(std::unique_ptr<PlanStage> child);
 
     bool isEOF() final;
     StageState doWork(WorkingSetID* out) final;

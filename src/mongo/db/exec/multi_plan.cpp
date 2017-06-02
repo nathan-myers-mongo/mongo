@@ -77,9 +77,11 @@ MultiPlanStage::MultiPlanStage(OperationContext* opCtx,
     invariant(_collection);
 }
 
-void MultiPlanStage::addPlan(QuerySolution* solution, PlanStage* root, WorkingSet* ws) {
-    _candidates.push_back(CandidatePlan(solution, root, ws));
-    _children.emplace_back(root);
+void MultiPlanStage::addPlan(QuerySolution* solution,
+                             std::unique_ptr<PlanStage> root,
+                             WorkingSet* ws) {
+    _candidates.push_back(CandidatePlan(solution, root.get(), ws));
+    _children.emplace_back(std::move(root));
 }
 
 bool MultiPlanStage::isEOF() {

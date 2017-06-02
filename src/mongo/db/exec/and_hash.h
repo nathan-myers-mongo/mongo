@@ -62,7 +62,7 @@ public:
                  const Collection* collection,
                  size_t maxMemUsage);
 
-    void addChild(PlanStage* child);
+    void addChild(std::unique_ptr<PlanStage> child);
 
     /**
      * Returns memory usage.

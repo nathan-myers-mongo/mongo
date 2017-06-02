@@ -98,7 +98,7 @@ public:
     /**
      * Takes ownership of QuerySolution and PlanStage. not of WorkingSet
      */
-    void addPlan(QuerySolution* solution, PlanStage* root, WorkingSet* sharedWs);
+    void addPlan(QuerySolution* solution, std::unique_ptr<PlanStage> root, WorkingSet* sharedWs);
 
     /**
      * Runs all plans added by addPlan, ranks them, and picks a best.

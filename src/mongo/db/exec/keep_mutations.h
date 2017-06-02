@@ -49,7 +49,7 @@ public:
     KeepMutationsStage(OperationContext* opCtx,
                        const MatchExpression* filter,
                        WorkingSet* ws,
-                       PlanStage* child);
+                       std::unique_ptr<PlanStage> child);
     ~KeepMutationsStage();
 
     bool isEOF() final;

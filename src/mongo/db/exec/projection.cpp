@@ -55,9 +55,9 @@ const char* ProjectionStage::kStageType = "PROJECTION";
 ProjectionStage::ProjectionStage(OperationContext* opCtx,
                                  const ProjectionStageParams& params,
                                  WorkingSet* ws,
-                                 PlanStage* child)
+                                 std::unique_ptr<PlanStage> child)
     : PlanStage(kStageType, opCtx), _ws(ws), _projImpl(params.projImpl) {
-    _children.emplace_back(child);
+    _children.emplace_back(std::move(child));
     _projObj = params.projObj;
 
     if (ProjectionStageParams::NO_FAST_PATH == _projImpl) {

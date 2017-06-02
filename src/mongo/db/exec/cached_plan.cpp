@@ -233,11 +233,11 @@ Status CachedPlanStage::replan(PlanYieldPolicy* yieldPolicy, bool shouldCache) {
             cache->remove(*_canonicalQuery);
         }
 
-        PlanStage* newRoot;
+        std::unique_ptr<PlanStage> newRoot;
         // Only one possible plan. Build the stages from the solution.
         verify(StageBuilder::build(
             getOpCtx(), _collection, *_canonicalQuery, *solutions[0], _ws, &newRoot));
-        _children.emplace_back(newRoot);
+        _children.emplace_back(std::move(newRoot));
         _replannedQs = std::move(solutions.back());
         solutions.pop_back();
 
@@ -262,12 +262,12 @@ Status CachedPlanStage::replan(PlanYieldPolicy* yieldPolicy, bool shouldCache) {
             solutions[ix]->cacheData->indexFilterApplied = _plannerParams.indexFiltersApplied;
         }
 
-        PlanStage* nextPlanRoot;
+        std::unique_ptr<PlanStage> nextPlanRoot;
         verify(StageBuilder::build(
             getOpCtx(), _collection, *_canonicalQuery, *solutions[ix], _ws, &nextPlanRoot));
 
         // Takes ownership of 'solutions[ix]' and 'nextPlanRoot'.
-        multiPlanStage->addPlan(solutions[ix].release(), nextPlanRoot, _ws);
+        multiPlanStage->addPlan(solutions[ix].release(), std::move(nextPlanRoot), _ws);
     }
 
     // Delegate to the MultiPlanStage's plan selection facility.

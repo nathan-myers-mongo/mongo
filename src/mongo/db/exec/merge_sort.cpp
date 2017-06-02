@@ -58,11 +58,10 @@ MergeSortStage::MergeSortStage(OperationContext* opCtx,
       _dedup(params.dedup),
       _merging(StageWithValueComparison(ws, params.pattern, params.collator)) {}
 
-void MergeSortStage::addChild(PlanStage* child) {
-    _children.emplace_back(child);
-
+void MergeSortStage::addChild(std::unique_ptr<PlanStage> child) {
     // We have to call work(...) on every child before we can pick a min.
-    _noResultToMerge.push(child);
+    _noResultToMerge.push(child.get());
+    _children.emplace_back(std::move(child));
 }
 
 bool MergeSortStage::isEOF() {

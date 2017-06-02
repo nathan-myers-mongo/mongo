@@ -51,7 +51,7 @@ class FetchStage : public PlanStage {
 public:
     FetchStage(OperationContext* opCtx,
                WorkingSet* ws,
-               PlanStage* child,
+               std::unique_ptr<PlanStage> child,
                const MatchExpression* filter,
                const Collection* collection);
 

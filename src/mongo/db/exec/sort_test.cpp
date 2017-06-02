@@ -108,13 +108,13 @@ public:
         params.limit = limit;
 
         auto sortKeyGen = stdx::make_unique<SortKeyGeneratorStage>(getOpCtx(),
-                                                                   queuedDataStage.release(),
+                                                                   std::move(queuedDataStage),
                                                                    &ws,
                                                                    params.pattern,
                                                                    fromjson(queryStr),
                                                                    collator);
 
-        SortStage sort(getOpCtx(), params, &ws, sortKeyGen.release());
+        SortStage sort(getOpCtx(), params, &ws, std::move(sortKeyGen));
 
         WorkingSetID id = WorkingSet::INVALID_ID;
         PlanStage::StageState state = PlanStage::NEED_TIME;
@@ -177,9 +177,9 @@ TEST_F(SortStageTest, SortEmptyWorkingSet) {
     // QueuedDataStage will be owned by SortStage.
     auto queuedDataStage = stdx::make_unique<QueuedDataStage>(getOpCtx(), &ws);
     auto sortKeyGen = stdx::make_unique<SortKeyGeneratorStage>(
-        getOpCtx(), queuedDataStage.release(), &ws, BSONObj(), BSONObj(), nullptr);
+        getOpCtx(), std::move(queuedDataStage), &ws, BSONObj(), BSONObj(), nullptr);
     SortStageParams params;
-    SortStage sort(getOpCtx(), params, &ws, sortKeyGen.release());
+    SortStage sort(getOpCtx(), params, &ws, std::move(sortKeyGen));
 
     // Check initial EOF state.
     ASSERT_FALSE(sort.isEOF());

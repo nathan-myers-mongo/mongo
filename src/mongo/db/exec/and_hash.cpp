@@ -75,8 +75,8 @@ AndHashStage::AndHashStage(OperationContext* opCtx,
       _memUsage(0),
       _maxMemUsage(maxMemUsage) {}
 
-void AndHashStage::addChild(PlanStage* child) {
-    _children.emplace_back(child);
+void AndHashStage::addChild(std::unique_ptr<PlanStage> child) {
+    _children.emplace_back(std::move(child));
 }
 
 size_t AndHashStage::getMemUsage() const {

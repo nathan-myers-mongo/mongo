@@ -70,7 +70,7 @@ bool SortStage::WorkingSetComparator::operator()(const SortableDataItem& lhs,
 SortStage::SortStage(OperationContext* opCtx,
                      const SortStageParams& params,
                      WorkingSet* ws,
-                     PlanStage* child)
+                     std::unique_ptr<PlanStage> child)
     : PlanStage(kStageType, opCtx),
       _collection(params.collection),
       _ws(ws),
@@ -79,7 +79,7 @@ SortStage::SortStage(OperationContext* opCtx,
       _sorted(false),
       _resultIterator(_data.end()),
       _memUsage(0) {
-    _children.emplace_back(child);
+    _children.emplace_back(std::move(child));
 
     BSONObj sortComparator = FindCommon::transformSortSpec(_pattern);
     _sortKeyComparator = stdx::make_unique<WorkingSetComparator>(sortComparator);

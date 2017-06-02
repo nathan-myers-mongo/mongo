@@ -41,9 +41,12 @@ using stdx::make_unique;
 // static
 const char* SkipStage::kStageType = "SKIP";
 
-SkipStage::SkipStage(OperationContext* opCtx, long long toSkip, WorkingSet* ws, PlanStage* child)
+SkipStage::SkipStage(OperationContext* opCtx,
+                     long long toSkip,
+                     WorkingSet* ws,
+                     std::unique_ptr<PlanStage> child)
     : PlanStage(kStageType, opCtx), _ws(ws), _toSkip(toSkip) {
-    _children.emplace_back(child);
+    _children.emplace_back(std::move(child));
 }
 
 SkipStage::~SkipStage() {}

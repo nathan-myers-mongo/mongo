@@ -44,13 +44,13 @@ const char* KeepMutationsStage::kStageType = "KEEP_MUTATIONS";
 KeepMutationsStage::KeepMutationsStage(OperationContext* opCtx,
                                        const MatchExpression* filter,
                                        WorkingSet* ws,
-                                       PlanStage* child)
+                                       std::unique_ptr<PlanStage> child)
     : PlanStage(kStageType, opCtx),
       _workingSet(ws),
       _filter(filter),
       _doneReadingChild(false),
       _doneReturningFlagged(false) {
-    _children.emplace_back(child);
+    _children.emplace_back(std::move(child));
 }
 
 KeepMutationsStage::~KeepMutationsStage() {}

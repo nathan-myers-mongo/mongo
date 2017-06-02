@@ -55,8 +55,8 @@ AndSortedStage::AndSortedStage(OperationContext* opCtx,
       _isEOF(false) {}
 
 
-void AndSortedStage::addChild(PlanStage* child) {
-    _children.emplace_back(child);
+void AndSortedStage::addChild(std::unique_ptr<PlanStage> child) {
+    _children.emplace_back(std::move(child));
 }
 
 bool AndSortedStage::isEOF() {

@@ -266,50 +266,6 @@ static R2Annulus twoDDistanceBounds(const GeoNearParams& nearParams,
     return fullBounds;
 }
 
-class GeoNear2DStage::DensityEstimator {
-public:
-    DensityEstimator(PlanStage::Children* children,
-                     const IndexDescriptor* twoDindex,
-                     const GeoNearParams* nearParams,
-                     const R2Annulus& fullBounds)
-        : _children(children),
-          _twoDIndex(twoDindex),
-          _nearParams(nearParams),
-          _fullBounds(fullBounds),
-          _currentLevel(0) {
-        GeoHashConverter::Parameters hashParams;
-        Status status = GeoHashConverter::parseParameters(_twoDIndex->infoObj(), &hashParams);
-        // The index status should always be valid.
-        invariant(status.isOK());
-
-        _converter.reset(new GeoHashConverter(hashParams));
-        _centroidCell = _converter->hash(_nearParams->nearQuery->centroid->oldPoint);
-
-        // Since appendVertexNeighbors(level, output) requires level < hash.getBits(),
-        // we have to start to find documents at most GeoHash::kMaxBits - 1. Thus the finest
-        // search area is 16 * finest cell area at GeoHash::kMaxBits.
-        _currentLevel = std::max(0u, hashParams.bits - 1u);
-    }
-
-    PlanStage::StageState work(OperationContext* opCtx,
-                               WorkingSet* workingSet,
-                               Collection* collection,
-                               WorkingSetID* out,
-                               double* estimatedDistance);
-
-private:
-    void buildIndexScan(OperationContext* opCtx, WorkingSet* workingSet, Collection* collection);
-
-    PlanStage::Children* _children;     // Points to PlanStage::_children in the NearStage.
-    const IndexDescriptor* _twoDIndex;  // Not owned here.
-    const GeoNearParams* _nearParams;   // Not owned here.
-    const R2Annulus& _fullBounds;
-    IndexScan* _indexScan = nullptr;  // Owned in PlanStage::_children.
-    unique_ptr<GeoHashConverter> _converter;
-    GeoHash _centroidCell;
-    unsigned _currentLevel;
-};
-
 // Initialize the internal states
 void GeoNear2DStage::DensityEstimator::buildIndexScan(OperationContext* opCtx,
                                                       WorkingSet* workingSet,
@@ -551,10 +507,10 @@ class FetchStageWithMatch final : public FetchStage {
 public:
     FetchStageWithMatch(OperationContext* opCtx,
                         WorkingSet* ws,
-                        PlanStage* child,
+                        std::unique_ptr<PlanStage> child,
                         MatchExpression* filter,
                         const Collection* collection)
-        : FetchStage(opCtx, ws, child, filter, collection), _matcher(filter) {}
+        : FetchStage(opCtx, ws, std::move(child), filter, collection), _matcher(filter) {}
 
 private:
     // Owns matcher
@@ -729,7 +685,7 @@ StatusWith<NearStage::CoveredInterval*>  //
     GeoHashConverter::parseParameters(_twoDIndex->infoObj(), &hashParams);
 
     // 2D indexes support covered search over additional fields they contain
-    IndexScan* scan = new IndexScan(opCtx, scanParams, workingSet, _nearParams.filter);
+    auto scan = stdx::make_unique<IndexScan>(opCtx, scanParams, workingSet, _nearParams.filter);
 
     MatchExpression* docMatcher = nullptr;
 
@@ -740,8 +696,8 @@ StatusWith<NearStage::CoveredInterval*>  //
     }
 
     // FetchStage owns index scan
-    _children.emplace_back(
-        new FetchStageWithMatch(opCtx, workingSet, scan, docMatcher, collection));
+    _children.emplace_back(stdx::make_unique<FetchStageWithMatch>(
+        opCtx, workingSet, std::move(scan), docMatcher, collection));
 
     return StatusWith<CoveredInterval*>(new CoveredInterval(_children.back().get(),
                                                             true,
@@ -842,46 +798,6 @@ S2Region* buildS2Region(const R2Annulus& sphereBounds) {
     return new S2RegionIntersection(&regions);
 }
 }
-
-// Estimate the density of data by search the nearest cells level by level around center.
-class GeoNear2DSphereStage::DensityEstimator {
-public:
-    DensityEstimator(PlanStage::Children* children,
-                     const IndexDescriptor* s2Index,
-                     const GeoNearParams* nearParams,
-                     const S2IndexingParams& indexParams,
-                     const R2Annulus& fullBounds)
-        : _children(children),
-          _s2Index(s2Index),
-          _nearParams(nearParams),
-          _indexParams(indexParams),
-          _fullBounds(fullBounds),
-          _currentLevel(0) {
-        // cellId.AppendVertexNeighbors(level, output) requires level < finest,
-        // so we use the minimum of max_level - 1 and the user specified finest
-        int level = std::min(S2::kMaxCellLevel - 1, internalQueryS2GeoFinestLevel.load());
-        _currentLevel = std::max(0, level);
-    }
-
-    // Search for a document in neighbors at current level.
-    // Return IS_EOF is such document exists and set the estimated distance to the nearest doc.
-    PlanStage::StageState work(OperationContext* opCtx,
-                               WorkingSet* workingSet,
-                               Collection* collection,
-                               WorkingSetID* out,
-                               double* estimatedDistance);
-
-private:
-    void buildIndexScan(OperationContext* opCtx, WorkingSet* workingSet, Collection* collection);
-
-    PlanStage::Children* _children;    // Points to PlanStage::_children in the NearStage.
-    const IndexDescriptor* _s2Index;   // Not owned here.
-    const GeoNearParams* _nearParams;  // Not owned here.
-    const S2IndexingParams _indexParams;
-    const R2Annulus& _fullBounds;
-    int _currentLevel;
-    IndexScan* _indexScan = nullptr;  // Owned in PlanStage::_children.
-};
 
 // Setup the index scan stage for neighbors at this level.
 void GeoNear2DSphereStage::DensityEstimator::buildIndexScan(OperationContext* opCtx,
@@ -1097,10 +1013,11 @@ StatusWith<NearStage::CoveredInterval*>  //
     OrderedIntervalList* coveredIntervals = &scanParams.bounds.fields[s2FieldPosition];
     ExpressionMapping::S2CellIdsToIntervalsWithParents(cover, _indexParams, coveredIntervals);
 
-    IndexScan* scan = new IndexScan(opCtx, scanParams, workingSet, nullptr);
+    auto scan = stdx::make_unique<IndexScan>(opCtx, scanParams, workingSet, nullptr);
 
     // FetchStage owns index scan
-    _children.emplace_back(new FetchStage(opCtx, workingSet, scan, _nearParams.filter, collection));
+    _children.emplace_back(stdx::make_unique<FetchStage>(
+        opCtx, workingSet, std::move(scan), _nearParams.filter, collection));
 
     return StatusWith<CoveredInterval*>(new CoveredInterval(_children.back().get(),
                                                             true,

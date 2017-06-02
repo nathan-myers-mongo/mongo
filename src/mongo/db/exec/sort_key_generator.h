@@ -116,7 +116,7 @@ private:
 class SortKeyGeneratorStage final : public PlanStage {
 public:
     SortKeyGeneratorStage(OperationContext* opCtx,
-                          PlanStage* child,
+                          std::unique_ptr<PlanStage> child,
                           WorkingSet* ws,
                           const BSONObj& sortSpecObj,
                           const BSONObj& queryObj,

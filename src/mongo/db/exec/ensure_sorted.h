@@ -41,7 +41,10 @@ namespace mongo {
  */
 class EnsureSortedStage final : public PlanStage {
 public:
-    EnsureSortedStage(OperationContext* opCtx, BSONObj pattern, WorkingSet* ws, PlanStage* child);
+    EnsureSortedStage(OperationContext* opCtx,
+                      BSONObj pattern,
+                      WorkingSet* ws,
+                      std::unique_ptr<PlanStage> child);
 
     bool isEOF() final;
     StageState doWork(WorkingSetID* out) final;

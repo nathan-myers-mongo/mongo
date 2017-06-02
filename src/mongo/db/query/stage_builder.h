@@ -56,7 +56,7 @@ public:
                       const CanonicalQuery& cq,
                       const QuerySolution& solution,
                       WorkingSet* wsIn,
-                      PlanStage** rootOut);
+                      std::unique_ptr<PlanStage>* rootOut);
 };
 
 }  // namespace mongo
