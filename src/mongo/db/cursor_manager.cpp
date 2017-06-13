@@ -367,22 +367,22 @@ void CursorManager::invalidateIf(OperationContext* opCtx,
             auto* exec = cursor->getExecutor();
 
             if (collectionGoingAway || predicate(exec)) {
+                // Mark as killed, but avoid deleting it where we can so we can provide a useful
+                // error message to the user next time they try to use it.
                 killed = true;
                 exec->markAsKilled(reason);
 
                 if (collectionGoingAway || cursor->_isPinned) {
-                    // We keep unpinned cursors around so that future attempts to use the cursor
-                    // will result in a useful error message.
+                    // If pinned, an active user of this cursor is responsible for cleaning it
+                    // up. Otherwise, we can immediately dispose of it.
                     if (!cursor->_isPinned) {
-                        // If pinned, the active user of this cursor is responsible for cleaning it
-                        // up. Otherwise, we can immediately dispose of it.
                         cursor->dispose(opCtx);
                         delete cursor;
                     }
                     it = partition.erase(it);
                     continue;
                 }
-                // It is marked killed, so it will be deleted eventually.
+                // It is marked killed, so somebody will clean it up eventually.
             }
             ++it;
         }

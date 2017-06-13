@@ -139,8 +139,9 @@ void OpObserverImpl::onUpdate(OperationContext* opCtx, const OplogUpdateEntryArg
         FeatureCompatibilityVersion::onInsertOrUpdate(args.updatedDoc);
     }
 
-    // TODO: When we have default read-snapshots (3.8?), this call (and the one above) can be
-    // eliminated, because only queries that have asked will see these deletions.
+    // TODO: When we have default read-snapshots (3.8?), this call (and the other one above) can be
+    // eliminated, because only queries that have asked to see these deletions do.
+
     CollectionRangeDeleter::onMaybeStartRangeDeletion(
         opCtx, args.nss, args.updatedDoc, args.fromMigrate);
 }
