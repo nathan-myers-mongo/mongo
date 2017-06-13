@@ -377,9 +377,9 @@ PlanStage* buildStages(OperationContext* opCtx,
             root->appendToString(&ss, 0);
             string nodeStr(ss);
             warning() << "Can't build exec tree for node " << nodeStr << endl;
-            return nullptr;
         }
     }
+    return nullptr;
 }
 
 // static (this one is used for Cached and MultiPlanStage)
