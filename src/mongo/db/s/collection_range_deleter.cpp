@@ -365,8 +365,8 @@ Status CollectionRangeDeleter::DeleteNotification::waitStatus(OperationContext* 
     }
 }
 
-// TODO: When we have default read-snapshots (3.8?), this function can be eliminated, because only
-// queries that have asked will see range deletions.
+// TODO: When we have default read-snapshots (3.8?), the following function can be eliminated,
+// because only queries that have asked will see range deletions.
 
 void CollectionRangeDeleter::onMaybeStartRangeDeletion(OperationContext* opCtx,
                                                        const NamespaceString& nss,
@@ -401,11 +401,11 @@ void CollectionRangeDeleter::onMaybeStartRangeDeletion(OperationContext* opCtx,
     CollectionRangeDeleter::_killDependentQueries(opCtx, shardNss, epoch, range);
 }
 
-namespace {
+bool CollectionRangeDeleter::queryDependsOn(
+    CanonicalQuery const* query,
+    std::vector<ScopedCollectionMetadata> const& overlaps,
+    OID const& epoch) {
 
-bool queryDependsOn(CanonicalQuery const* query,
-                    std::vector<ScopedCollectionMetadata> const& overlaps,
-                    OID const& epoch) {
     if (query == nullptr) {
         return false;  // No query, no ShardFilterStage, no problem.
     }
@@ -423,12 +423,10 @@ bool queryDependsOn(CanonicalQuery const* query,
     return false;
 }
 
-}  // anonymous namespace
-
-void CollectionRangeDeleter::_killDependentQueries(OperationContext* opCtx,
-                                                   NamespaceString const& nss,
-                                                   OID const& epoch,
-                                                   ChunkRange const& range) {
+void CollectionRangeDeleter::killDependentQueries(OperationContext* opCtx,
+                                                  NamespaceString const& nss,
+                                                  OID const& epoch,
+                                                  ChunkRange const& range) {
 
     AutoGetCollection autoColl(opCtx, nss, MODE_X);
     auto* collection = autoColl.getCollection();

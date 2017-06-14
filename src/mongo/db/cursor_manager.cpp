@@ -367,8 +367,8 @@ void CursorManager::invalidateIf(OperationContext* opCtx,
             auto* exec = cursor->getExecutor();
 
             if (collectionGoingAway || predicate(exec)) {
-                // Mark as killed, but avoid deleting it where we can so we can provide a useful
-                // error message to the user next time they try to use it.
+                // Mark as killed, but try to avoid deleting it here if possible so we can provide
+                // an error message to the user the next time they try to use it.
                 killed = true;
                 exec->markAsKilled(reason);
 
