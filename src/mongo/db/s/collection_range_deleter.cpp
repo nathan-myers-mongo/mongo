@@ -401,10 +401,9 @@ void CollectionRangeDeleter::onMaybeStartRangeDeletion(OperationContext* opCtx,
     CollectionRangeDeleter::_killDependentQueries(opCtx, shardNss, epoch, range);
 }
 
-bool CollectionRangeDeleter::queryDependsOn(
-    CanonicalQuery const* query,
-    std::vector<ScopedCollectionMetadata> const& overlaps,
-    OID const& epoch) {
+bool CollectionRangeDeleter::queryDependsOn(CanonicalQuery const* query,
+                                            std::vector<ScopedCollectionMetadata> const& overlaps,
+                                            OID const& epoch) {
 
     if (query == nullptr) {
         return false;  // No query, no ShardFilterStage, no problem.

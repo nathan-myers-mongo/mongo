@@ -194,6 +194,7 @@ public:
                                      NamespaceString const&,
                                      OID const& epoch,
                                      ChunkRange const&);
+
 private:
     /**
      * Removes the latest-scheduled range from the ranges to be cleaned up, and notifies any
