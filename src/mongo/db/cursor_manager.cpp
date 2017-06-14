@@ -349,13 +349,14 @@ void CursorManager::invalidateIf(OperationContext* opCtx,
     {
         auto allExecPartitions = _registeredPlanExecutors.lockAllPartitions();
         for (auto&& partition : allExecPartitions) {
-            for (auto&& exec : partition) {
-
-                if (collectionGoingAway || predicate(exec)) {
+            for (auto it = partition.begin(); it != partition.end();) {
+                if (collectionGoingAway || predicate(*it)) {
                     killed = true;
-                    exec->markAsKilled(reason);
-                    _registeredPlanExecutors.erase(exec);
+                    (*it)->markAsKilled(reason);
+                    it = partition.erase(it);
+                    continue;
                 }
+                ++it;
             }
         }
     }  // Drop the plan executor registry locks.
