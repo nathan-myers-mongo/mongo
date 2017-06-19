@@ -322,7 +322,7 @@ auto makeCanonicalQuery(OperationContext* opCtx,
     // Otherwise (in the "simple" collation case), we simply set the collation option to the
     // original user BSON, which is either the empty object (unspecified), or the specification for
     // the "simple" collation.
-
+    //
     qr->setCollation(pExpCtx->getCollator() ? pExpCtx->getCollator()->getSpec().toBSON()
                                             : pExpCtx->collation);
 
@@ -391,7 +391,7 @@ auto makeRandomCursorExecutor(Collection* collection,
             opCtx, ws.get(), idxIterator.release(), nullptr, collection);
     }
 
-    auto const yield = PlanExecutor::YIELD_AUTO;
+    auto const yieldAuto = PlanExecutor::YIELD_AUTO;
     {
         AutoGetCollectionForRead autoColl(opCtx, collection->ns());
 
@@ -407,11 +407,11 @@ auto makeRandomCursorExecutor(Collection* collection,
             auto shardStage =
                 stdx::make_unique<ShardFilterStage>(opCtx, cq.get(), ws.get(), stage.release());
             return PlanExecutor::make(
-                opCtx, std::move(ws), std::move(shardStage), std::move(cq), collection, yield);
+                opCtx, std::move(ws), std::move(shardStage), std::move(cq), collection, yieldAuto);
         }
     }
 
-    return PlanExecutor::make(opCtx, std::move(ws), std::move(stage), collection, yield);
+    return PlanExecutor::make(opCtx, std::move(ws), std::move(stage), collection, yieldAuto);
 }
 
 auto attemptToGetExecutor(OperationContext* opCtx,
@@ -600,9 +600,10 @@ auto PipelineD::prepareExecutor(OperationContext* opCtx,
         plannerOpts |= QueryPlannerParams::NO_UNCOVERED_PROJECTIONS;
     }
 
+    BSONObj noProj;
     if (sortStage) {
         // See if the query system can provide a non-blocking sort.
-        auto cq = makeCanonicalQuery(opCtx, nss, expCtx, queryObj, {}, *sortObj, aggRequest);
+        auto cq = makeCanonicalQuery(opCtx, nss, expCtx, queryObj, noProj, *sortObj, aggRequest);
         auto swExecutorSort = attemptToGetExecutor(opCtx, collection, plannerOpts, std::move(cq));
 
         if (swExecutorSort.isOK()) {

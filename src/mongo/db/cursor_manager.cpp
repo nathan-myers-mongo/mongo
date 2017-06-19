@@ -28,8 +28,6 @@
 
 #define MONGO_LOG_DEFAULT_COMPONENT ::mongo::logger::LogComponent::kQuery
 
-#include <functional>
-
 #include "mongo/db/cursor_manager.h"
 
 #include "mongo/base/data_cursor.h"
@@ -48,6 +46,7 @@
 #include "mongo/db/server_parameters.h"
 #include "mongo/db/service_context.h"
 #include "mongo/platform/random.h"
+#include "mongo/stdx/functional.h"
 #include "mongo/stdx/memory.h"
 #include "mongo/util/exit.h"
 #include "mongo/util/log.h"
@@ -56,7 +55,6 @@
 namespace mongo {
 
 using std::vector;
-using logger::LogComponent;
 
 constexpr Minutes CursorManager::kDefaultCursorTimeoutMinutes;
 
@@ -330,12 +328,6 @@ CursorManager::~CursorManager() {
     }
 }
 
-void CursorManager::invalidateAll(OperationContext* opCtx,
-                                  bool collectionGoingAway,
-                                  const std::string& reason) {
-    invalidateIf(opCtx, reason, [](PlanExecutor*) { return true; }, collectionGoingAway);
-}
-
 void CursorManager::invalidateIf(OperationContext* opCtx,
                                  std::string const& reason,
                                  stdx::function<bool(PlanExecutor*)> predicate,
@@ -345,13 +337,13 @@ void CursorManager::invalidateIf(OperationContext* opCtx,
     dassert(opCtx->lockState()->isCollectionLockedForMode(_nss.ns(), MODE_X));
     fassert(28819, !BackgroundOperation::inProgForNs(_nss));
 
-    bool killed = false;
+    int nKilled = 0;
     {
         auto allExecPartitions = _registeredPlanExecutors.lockAllPartitions();
         for (auto&& partition : allExecPartitions) {
             for (auto it = partition.begin(); it != partition.end();) {
                 if (collectionGoingAway || predicate(*it)) {
-                    killed = true;
+                    ++nKilled;
                     (*it)->markAsKilled(reason);
                     it = partition.erase(it);
                     continue;
@@ -370,7 +362,7 @@ void CursorManager::invalidateIf(OperationContext* opCtx,
             if (collectionGoingAway || predicate(exec)) {
                 // Mark as killed, but try to avoid deleting it here if possible so we can provide
                 // an error message to the user the next time they try to use it.
-                killed = true;
+                ++nKilled;
                 exec->markAsKilled(reason);
 
                 if (collectionGoingAway || cursor->_isPinned) {
@@ -388,8 +380,8 @@ void CursorManager::invalidateIf(OperationContext* opCtx,
             ++it;
         }
     }
-    if (killed) {
-        log() << "Killed queries: " << reason;
+    if (nKilled) {
+        log() << "Killed " << nKilled << " queries on collection " << _nss.ns() << ": " << reason;
     }
 }
 

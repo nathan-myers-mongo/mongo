@@ -365,45 +365,17 @@ Status CollectionRangeDeleter::DeleteNotification::waitStatus(OperationContext* 
     }
 }
 
-// TODO: When we have default read-snapshots (3.8?), the following function can be eliminated,
-// because only queries that have asked will see range deletions.
+namespace {
 
-void CollectionRangeDeleter::onMaybeStartRangeDeletion(OperationContext* opCtx,
-                                                       const NamespaceString& nss,
-                                                       BSONObj const& obj,
-                                                       bool fromMigrate) {
-    if (fromMigrate || nss != NamespaceString::kConfigCollectionNamespace) {
-        return;
-    }
-    auto idElem = obj["_id"];
-    if (idElem.type() != String || idElem.str() != kStartRangeDeletion) {
-        return;
-    }
-
-    std::string shardNs;
-    invariant(bsonExtractStringField(obj, "ns", &shardNs).isOK());
-    auto shardNss = NamespaceString{shardNs};
-
-    if (repl::ReplicationCoordinator::get(opCtx)->canAcceptWritesFor(opCtx, shardNss)) {
-        return;  // secondaries only, ignore on primary or during recovery
-    }
-
-    OID epoch;
-    invariant(bsonExtractOIDField(obj, "epoch", &epoch).isOK());
-
-    BSONElement min, max;
-    invariant(bsonExtractField(obj, "min", &min).isOK());
-    invariant(bsonExtractField(obj, "max", &max).isOK());
-    invariant(min.type() == BSONType::Object);
-    invariant(max.type() == BSONType::Object);
-
-    auto range = ChunkRange{min.Obj(), max.Obj()};
-    CollectionRangeDeleter::_killDependentQueries(opCtx, shardNss, epoch, range);
-}
-
-bool CollectionRangeDeleter::queryDependsOn(CanonicalQuery const* query,
-                                            std::vector<ScopedCollectionMetadata> const& overlaps,
-                                            OID const& epoch) {
+/**
+ * Checks whether the query holds a ScopedCollectionMetadata matching any in 'overlaps', including
+ * the epoch, and has not specified that its dependence be ignored.
+ *
+ * TODO: Delete this function when killDependentQueries, below, is removed, probably for 3.8.
+ */
+bool queryDependsOn(CanonicalQuery const* query,
+                    std::vector<ScopedCollectionMetadata> const& overlaps,
+                    OID const& epoch) {
 
     if (query == nullptr) {
         return false;  // No query, no ShardFilterStage, no problem.
@@ -415,17 +387,24 @@ bool CollectionRangeDeleter::queryDependsOn(CanonicalQuery const* query,
         queryRequest.getUnwrappedReadPref().getBoolField("ignoreChunkMigration")) {
         return false;
     }
-    for (auto const& scm : overlaps) {
-        if (query->usesMetadata(scm) && epoch == scm->getCollVersion().epoch())
+    for (auto const& shardMapping : overlaps) {
+        if (query->usesMetadata(shardMapping) && epoch == shardMapping->getCollVersion().epoch())
             return true;
     }
     return false;
 }
 
-void CollectionRangeDeleter::killDependentQueries(OperationContext* opCtx,
-                                                  NamespaceString const& nss,
-                                                  OID const& epoch,
-                                                  ChunkRange const& range) {
+/**
+ * Kills queries that might depend on the documents in the range specified, preparatory to such
+ * documents being deleted by the op log observer.
+ *
+ * TODO: Delete this function when onMaybeStartRangeDeletion is removed, probably for 3.8.
+ */
+
+void killDependentQueries(OperationContext* opCtx,
+                          NamespaceString const& nss,
+                          OID const& epoch,
+                          ChunkRange const& range) {
 
     AutoGetCollection autoColl(opCtx, nss, MODE_X);
     auto* collection = autoColl.getCollection();
@@ -443,6 +422,46 @@ void CollectionRangeDeleter::killDependentQueries(OperationContext* opCtx,
     cursorManager->invalidateIf(opCtx, msg, [&](PlanExecutor* exec) -> bool {
         return queryDependsOn(exec->getCanonicalQuery(), overlaps, epoch);
     });
+}
+
+}  // namespace
+
+
+// TODO: When we have default read-snapshots (3.8?), this function can be eliminated, because only
+// queries that have asked will see range deletions.
+
+void CollectionRangeDeleter::onMaybeStartRangeDeletion(OperationContext* opCtx,
+                                                       const NamespaceString& nss,
+                                                       BSONObj const& obj,
+                                                       bool fromMigrate) {
+    // Cheapest checks first:
+    if (fromMigrate || nss != NamespaceString::kConfigCollectionNamespace) {
+        return;
+    }
+    auto idElem = obj["_id"];
+    if (idElem.type() != String || idElem.str() != kStartRangeDeletion) {
+        return;
+    }
+
+    std::string shardNs;
+    invariant(bsonExtractStringField(obj, "ns", &shardNs).isOK());
+    auto shardNss = NamespaceString{std::move(shardNs)};
+
+    if (repl::ReplicationCoordinator::get(opCtx)->canAcceptWritesFor(opCtx, shardNss)) {
+        return;  // secondaries only, ignore on primary or during recovery
+    }
+
+    OID epoch;
+    invariant(bsonExtractOIDField(obj, "epoch", &epoch).isOK());
+
+    BSONElement min, max;
+    invariant(bsonExtractField(obj, "min", &min).isOK());
+    invariant(bsonExtractField(obj, "max", &max).isOK());
+    invariant(min.type() == BSONType::Object);
+    invariant(max.type() == BSONType::Object);
+
+    auto range = ChunkRange{min.Obj(), max.Obj()};
+    killDependentQueries(opCtx, shardNss, epoch, range);
 }
 
 }  // namespace mongo

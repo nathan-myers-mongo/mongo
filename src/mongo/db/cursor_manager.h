@@ -28,7 +28,6 @@
 
 #pragma once
 
-#include <functional>
 
 #include "mongo/db/catalog/util/partitioned.h"
 #include "mongo/db/clientcursor.h"
@@ -38,6 +37,7 @@
 #include "mongo/db/record_id.h"
 #include "mongo/platform/unordered_map.h"
 #include "mongo/platform/unordered_set.h"
+#include "mongo/stdx/functional.h"
 #include "mongo/util/concurrency/mutex.h"
 #include "mongo/util/duration.h"
 
@@ -55,7 +55,7 @@ class PlanExecutor;
  * In addition to managing the lifetime of ClientCursors, the CursorManager is responsible for
  * notifying yielded queries of write operations and collection drops. For this reason, query
  * PlanExecutor objects which are not contained within a ClientCursor are also registered with the
- * CursorManager. Query executors must be registered with the CursorManager, either as a bare
+ * CursorManager. PlanExecutors must be registered with the CursorManager, either as a bare
  * PlanExecutor or inside a ClientCursor (but cannot be registered in both ways).
  *
  * There is a CursorManager per-collection and a global CursorManager. The global CursorManager owns
@@ -89,9 +89,8 @@ public:
     ~CursorManager();
 
     /**
-     * Kills all managed query executors and ClientCursors. Callers must have exclusive access to
-     * the collection (i.e. must have the collection, database, or global resource locked in
-     * MODE_X).
+     * Kills all managed PlanExecutors and ClientCursors. Callers must have exclusive access to the
+     * collection (i.e. must have the collection, database, or global resource locked in MODE_X).
      *
      * 'collectionGoingAway' indicates whether the Collection instance is being deleted.  This
      * could be because the db is being closed, or the collection/db is being dropped.
@@ -102,12 +101,14 @@ public:
      */
     void invalidateAll(OperationContext* opCtx,
                        bool collectionGoingAway,
-                       const std::string& reason);
+                       const std::string& reason) {
+        invalidateIf(opCtx, reason, [](PlanExecutor*) { return true; }, collectionGoingAway);
+    }
 
     /**
-     * Kills managed query executors and ClientCursors that the predicate argument matches.
-     * Callers must have exclusive access to the collection (i.e. must have the collection,
-     * database, or global resource locked in MODE_X).
+     * Kills managed PlanExecutors and ClientCursors that the predicate argument matches. Callers
+     * must have exclusive access to the collection (i.e. must have the collection, database, or
+     * global resource locked in MODE_X).
      */
     void invalidateIf(OperationContext*,
                       std::string const& reason,

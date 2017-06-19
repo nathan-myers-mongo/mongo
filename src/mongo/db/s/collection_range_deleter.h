@@ -168,7 +168,7 @@ public:
      * running as a secondary server, call _killDependentQueries on the collection and range the
      * record specifies.
      *
-     * This is meant to be called by opObserverImpl when it sees an insert or update event.
+     * This is meant to be called from the op log observer when it sees an insert or update event.
      * TODO: When we have default read-snapshots (3.8?), this function and the other members it
      * uses can be eliminated, because queries will see range deletions only if they ask for it.
      */
@@ -176,24 +176,6 @@ public:
                                           const NamespaceString& nss,
                                           BSONObj const& opLogRecord,
                                           bool fromMigrate);
-
-    /**
-     * Checks whether the query holds a ScopedCollectionMetadata matching any in the overlaps
-     * argument, including the epoch, and has not specified that its dependence be ignored.
-     * (This function is used in a predicate passed to CursorManager::invalidateIf.)
-     */
-    static bool queryDependsOn(CanonicalQuery const* query,
-                               std::vector<ScopedCollectionMetadata> const& overlaps,
-                               OID const& epoch);
-
-    /**
-     * Kills queries that might depend on the documents in the range specified, preparatory to such
-     * documents being deleted by the op log observer.
-     */
-    static void killDependentQueries(OperationContext*,
-                                     NamespaceString const&,
-                                     OID const& epoch,
-                                     ChunkRange const&);
 
 private:
     /**
