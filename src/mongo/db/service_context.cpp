@@ -226,7 +226,8 @@ void ServiceContext::ClientDeleter::operator()(Client* client) const {
     delete client;
 }
 
-ServiceContext::UniqueOperationContext ServiceContext::makeOperationContext(Client* client) {
+auto ServiceContext::makeOperationContext(Client* client, DependsOnPeers depends)
+    -> UniqueOperationContext {
     auto opCtx = _newOpCtx(client, _nextOpId.fetchAndAdd(1));
     auto observer = _clientObservers.begin();
     try {
@@ -246,7 +247,7 @@ ServiceContext::UniqueOperationContext ServiceContext::makeOperationContext(Clie
     }
     {
         stdx::lock_guard<Client> lk(*client);
-        client->setOperationContext(opCtx.get());
+        client->setOperationContext(opCtx.get(), depends);
     }
     return UniqueOperationContext(opCtx.release());
 };
@@ -346,7 +347,7 @@ void ServiceContext::killOperation(OperationContext* opCtx, ErrorCodes::Error ki
 void ServiceContext::killAllUserOperations(const OperationContext* opCtx,
                                            ErrorCodes::Error killCode) {
     for (LockedClientsCursor cursor(this); Client* client = cursor.next();) {
-        if (!client->isFromUserConnection()) {
+        if (!client->isFromUserConnection() && !client->_isDependent) {
             // Don't kill system operations.
             continue;
         }

@@ -169,18 +169,23 @@ public:
     /**
      * Makes a new operation context representing an operation on this client.  At most
      * one operation context may be in scope on a client at a time.
+     * Called with kDependent, the context is killed on events that kill user operations.
      *
      * If provided, the LogicalSessionId links this operation to a logical session.
      */
-    ServiceContext::UniqueOperationContext makeOperationContext();
+    auto makeOperationContext(ServiceContext::DependsOnPeers = ServiceContext::kIndependent)
+        -> ServiceContext::UniqueOperationContext;
 
     /**
-     * Sets the active operation context on this client to "opCtx", which must be non-NULL.
+     * Sets the active operation context on this client to "opCtx", which must be non-NULL,
+     * and records whether the operation should be treated like a client connection (default
+     * not).
      *
      * It is an error to call this method if there is already an operation context on Client.
      * It is an error to call this on an unlocked client.
      */
-    void setOperationContext(OperationContext* opCtx);
+    void setOperationContext(OperationContext* opCtx,
+                             ServiceContext::DependsOnPeers = ServiceContext::kIndependent);
 
     /**
      * Clears the active operation context on this client.
@@ -242,6 +247,9 @@ private:
 
     // Whether this client is running as DBDirectClient
     bool _inDirectClient = false;
+
+    // Whether client should be treated as a user for purposes of killAllUserOperations
+    bool _isDependent = false;
 
     // If != NULL, then contains the currently active OperationContext
     OperationContext* _opCtx = nullptr;

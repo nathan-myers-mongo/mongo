@@ -429,6 +429,8 @@ private:
     Client* const _client;
     const unsigned int _opId;
 
+    const bool _interruptLikeClient{false};
+
     boost::optional<LogicalSessionId> _lsid;
     boost::optional<TxnNumber> _txnNumber;
 

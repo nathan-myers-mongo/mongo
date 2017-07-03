@@ -414,7 +414,8 @@ void MigrationDestinationManager::_migrateThread(BSONObj min,
                                                  OID epoch,
                                                  WriteConcernOptions writeConcern) {
     Client::initThread("migrateThread");
-    auto opCtx = getGlobalServiceContext()->makeOperationContext(&cc());
+    // As a kDependent context, we will be killed on stepdown.
+    auto opCtx = getGlobalServiceContext()->makeOperationContext(&cc(), ServiceContext::kDependent);
 
     if (getGlobalAuthorizationManager()->isAuthEnabled()) {
         AuthorizationSession::get(opCtx->getClient())->grantInternalAuthorization();
@@ -767,7 +768,8 @@ void MigrationDestinationManager::_migrateDriver(OperationContext* opCtx,
         // Pause to wait for replication. This will prevent us from going into critical section
         // until we're ready.
         Timer t;
-        while (t.minutes() < 600) {
+        bool done = false;
+        while (t.minutes() < 10) {
             opCtx->checkForInterrupt();
 
             if (getState() == ABORT) {
@@ -778,13 +780,14 @@ void MigrationDestinationManager::_migrateDriver(OperationContext* opCtx,
             log() << "Waiting for replication to catch up before entering critical section";
 
             if (_flushPendingWrites(opCtx, _nss.ns(), min, max, lastOpApplied, writeConcern)) {
+                done = true;
                 break;
             }
 
             sleepsecs(1);
         }
 
-        if (t.minutes() >= 600) {
+        if (! done) {
             setStateFail("Cannot go to critical section because secondaries cannot keep up");
             return;
         }

@@ -226,7 +226,9 @@ public:
      * "client" must not have an active operation context.
      *
      */
-    UniqueOperationContext makeOperationContext(Client* client);
+    enum DependsOnPeers { kIndependent, kDependent };
+    auto makeOperationContext(Client* client, DependsOnPeers = kIndependent)
+        -> UniqueOperationContext;
 
     //
     // Storage
@@ -299,7 +301,8 @@ public:
 
     /**
      * Kills all operations that have a Client that is associated with an incoming user
-     * connection, except for the one associated with opCtx.
+     * connection, except for the one associated with opCtx.  Also kills operations whose
+     * operation contexts were constructed with the DependsOnPeers argument value kDependent.
      */
     void killAllUserOperations(const OperationContext* opCtx, ErrorCodes::Error killCode);
 

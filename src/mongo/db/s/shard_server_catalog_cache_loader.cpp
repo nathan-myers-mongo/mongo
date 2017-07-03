@@ -258,7 +258,7 @@ std::shared_ptr<Notification<void>> ShardServerCatalogCacheLoader::getChunksSinc
 
     uassertStatusOK(_threadPool.schedule(
         [ this, nss, version, callbackFn, notify, isPrimary, currentTerm ]() noexcept {
-            auto opCtx = Client::getCurrent()->makeOperationContext();
+            auto opCtx = Client::getCurrent()->makeOperationContext(ServiceContext::kDependent);
             try {
                 if (isPrimary) {
                     _schedulePrimaryGetChunksSince(

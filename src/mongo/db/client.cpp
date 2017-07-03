@@ -123,19 +123,22 @@ void Client::reportState(BSONObjBuilder& builder) {
     }
 }
 
-ServiceContext::UniqueOperationContext Client::makeOperationContext() {
-    return getServiceContext()->makeOperationContext(this);
+auto Client::makeOperationContext(ServiceContext::DependsOnPeers depends)
+    -> ServiceContext::UniqueOperationContext {
+    return getServiceContext()->makeOperationContext(this, depends);
 }
 
-void Client::setOperationContext(OperationContext* opCtx) {
+void Client::setOperationContext(OperationContext* opCtx, ServiceContext::DependsOnPeers depends) {
     // We can only set the OperationContext once before resetting it.
     invariant(opCtx != NULL && _opCtx == NULL);
     _opCtx = opCtx;
+    _isDependent = (depends != ServiceContext::kIndependent);
 }
 
 void Client::resetOperationContext() {
     invariant(_opCtx != NULL);
     _opCtx = NULL;
+    _isDependent = false;
 }
 
 std::string Client::clientAddress(bool includePort) const {
