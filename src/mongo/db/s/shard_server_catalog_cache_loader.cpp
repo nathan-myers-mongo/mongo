@@ -227,6 +227,7 @@ void ShardServerCatalogCacheLoader::initializeReplicaSetRole(bool isPrimary) {
 void ShardServerCatalogCacheLoader::onStepDown() {
     stdx::lock_guard<stdx::mutex> lock(_mutex);
     invariant(_role != ReplicaSetRole::None);
+    _contexts.interrupt();  // Any tasks associated with the primary state will die and clean up.
     ++_term;
     _role = ReplicaSetRole::Secondary;
 }
@@ -258,16 +259,16 @@ std::shared_ptr<Notification<void>> ShardServerCatalogCacheLoader::getChunksSinc
 
     uassertStatusOK(_threadPool.schedule(
         [ this, nss, version, callbackFn, notify, isPrimary, currentTerm ]() noexcept {
-            auto opCtx = Client::getCurrent()->makeOperationContext();
+            auto opCtx = _contexts.makeOpCtx(*Client::getCurrent());
             try {
                 if (isPrimary) {
                     _schedulePrimaryGetChunksSince(
-                        opCtx.get(), nss, version, currentTerm, callbackFn, notify);
+                        opCtx, nss, version, currentTerm, callbackFn, notify);
                 } else {
                     _runSecondaryGetChunksSince(opCtx.get(), nss, version, callbackFn);
                 }
             } catch (const DBException& ex) {
-                callbackFn(opCtx.get(), ex.toStatus());
+                callbackFn(opCtx, ex.toStatus());
                 notify->set();
             }
         }));
@@ -513,12 +514,12 @@ Status ShardServerCatalogCacheLoader::_scheduleTask(const NamespaceString& nss, 
 }
 
 void ShardServerCatalogCacheLoader::_runTasks(const NamespaceString& nss) {
-    auto opCtx = Client::getCurrent()->makeOperationContext();
+    auto opCtx = _contexts.makeOpCtx(*Client::getCurrent());
 
     // Run task
     bool taskFinished = false;
     try {
-        taskFinished = _updatePersistedMetadata(opCtx.get(), nss);
+        taskFinished = _updatePersistedMetadata(opCtx, nss);
     } catch (const DBException& ex) {
         log() << redact(ex.toStatus());
     }

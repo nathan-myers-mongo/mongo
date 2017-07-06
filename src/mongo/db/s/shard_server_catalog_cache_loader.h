@@ -321,6 +321,9 @@ private:
     // Indicates whether this server is the primary or not, so that the appropriate loading action
     // can be taken.
     ReplicaSetRole _role{ReplicaSetRole::None};
+
+    // The collection of operation contexts in use by all threads.
+    OpCtxGroup _contexts;
 };
 
 }  // namespace mongo
