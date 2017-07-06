@@ -36,18 +36,20 @@ namespace mongo {
 
 class OpCtxGroup {
     /**
-     * Maintains a collection of UniqueOperationContext objects so that they may be killed on a
-     * common event, such as from a stepdown callback.  On destruction, destroys all its owned
-     * OperationContext objects.
+     * Maintains a collection of operation contexts so that they may be killed on a common event,
+     * particularly an onStepdown callback.
      */
 public:
     using UniqueOperationContext = ServiceContext::UniqueOperationContext;
     class Context;
     friend class Context;
 
+    // OpCtxGroup() = default;
+    // ~OpCtxGroup() = default;
+
     /**
      * Makes an OperationContext on `client` and returns an OpCtxGroup::Context object to track it.
-     * On destruction of the returned Context, the OperationContext is destroyed and its
+     * On destruction of the returned Context, the OperationContext is destroyed, and its
      * corresponding entry in *this is erased.
      */
     Context makeOpCtx(Client& client);
