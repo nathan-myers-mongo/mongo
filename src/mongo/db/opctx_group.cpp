@@ -32,8 +32,27 @@
 
 namespace mongo {
 
-auto OpCtxGroup::adopt(UniqueOperationContext&& ctx) -> OpCtxGroup::Context {
+auto OpCtxGroup::makeOpCtx(Client& client) -> Context {
+    return adopt(client.makeOperationContext());
+}
+
+auto OpCtxGroup::adopt(UniqueOperationContext&& ctx) -> Context {
     _contexts.emplace_back(std::forward<UniqueOperationContext>(ctx));
+    return Context(_contexts.back().get(), *this);
+}
+
+auto OpCtxGroup::take(Context&& ctx) -> Context {
+    if (ctx._opCtx == nullptr)  // Already been moved from?
+        return Context(nullptr, *this);
+    if (&ctx._ctxGroup == this) {  // Already here?
+        return std::forward<OpCtxGroup::Context>(ctx);
+    }
+    auto it = std::find_if(ctx._ctxGroup._contexts.begin(), ctx._ctxGroup._contexts.end(),
+        [ cp = ctx._opCtx ](auto const& uoc) { return uoc.get() == cp; });
+    invariant(it != ctx._ctxGroup._contexts.end());
+    _contexts.emplace_back(std::move(*it));
+    ctx._opCtx = nullptr;
+    ctx._ctxGroup._contexts.erase(it);
     return Context(_contexts.back().get(), *this);
 }
 
@@ -49,6 +68,13 @@ void OpCtxGroup::_erase(OperationContext* ctx) {
         _contexts.begin(), _contexts.end(), [ctx](auto const& uoc) { return uoc.get() == ctx; });
     invariant(it != _contexts.end());
     _contexts.erase(it);
+}
+
+void OpCtxGroup::Context::release() {
+    if (_opCtx) {
+        _ctxGroup._erase(_opCtx);
+        _opCtx = nullptr;
+    }
 }
 
 }  // namespace mongo

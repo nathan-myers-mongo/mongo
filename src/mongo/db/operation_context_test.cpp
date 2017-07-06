@@ -176,11 +176,36 @@ TEST(OperationContextTest, OpCtxGroupSmoke) {
     auto client = serviceCtx->makeClient("OperationContextTest");
 
     OpCtxGroup group;
-    auto ctx = group.adopt(client->makeOperationContext());
-    OperationContext* opCtx = ctx.ctx();
-    ASSERT_TRUE(opCtx->checkForInterruptNoAssert().isOK());
-    group.interrupt(ErrorCodes::InternalError);
-    ASSERT_FALSE(opCtx->checkForInterruptNoAssert().isOK());
+    ASSERT_TRUE(group.isEmpty());
+    {
+        auto opCtx = group.makeOpCtx(*client);
+        ASSERT_FALSE(group.isEmpty());
+        ASSERT_TRUE(opCtx->checkForInterruptNoAssert().isOK());
+        group.interrupt(ErrorCodes::InternalError);
+        ASSERT_FALSE(opCtx->checkForInterruptNoAssert().isOK());
+    }
+    ASSERT_TRUE(group.isEmpty());
+    {
+        auto opCtx = group.adopt(client->makeOperationContext());
+        ASSERT_FALSE(group.isEmpty());
+        ASSERT_TRUE(opCtx->checkForInterruptNoAssert().isOK());
+        group.interrupt(ErrorCodes::InternalError);
+        ASSERT_FALSE(opCtx->checkForInterruptNoAssert().isOK());
+        opCtx.release();
+        ASSERT(opCtx.opCtx() == nullptr);
+        ASSERT_TRUE(group.isEmpty());
+    }
+    {
+        auto opCtx = group.makeOpCtx(*client);
+        auto p = opCtx.opCtx();
+        OpCtxGroup another;
+        auto opCtx2 = another.take(std::move(opCtx));
+        ASSERT_EQ(p, opCtx2.opCtx());
+        ASSERT(opCtx.opCtx() == nullptr);
+        ASSERT(opCtx2.opCtx() != nullptr);
+        ASSERT_TRUE(group.isEmpty());
+        ASSERT_FALSE(another.isEmpty());
+    }
 }
 
 class OperationDeadlineTests : public unittest::Test {

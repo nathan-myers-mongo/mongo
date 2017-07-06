@@ -36,25 +36,46 @@ namespace mongo {
 
 class OpCtxGroup {
     using UniqueOperationContext = ServiceContext::UniqueOperationContext;
-    /*
+    /**
      * Maintains a collection of UniqueOperationContext objects so that they may be killed on a
-     * common event, such as from a stepdown callback.  On destruction, destroys all its contexts.
+     * common event, such as from a stepdown callback.  On destruction, destroys all its owned
+     * OperationContext objects.
      */
 public:
     class Context;
     friend class Context;
 
-    /*
-     * Takes ownership of a UniqueOperationContext, and returns an OpCtxGroup::Context object to
-     * track it.  On destruction of the Context, its entry in *this is erased and its
+    /**
+     * Makes an OperationContext on `client` and returns an OpCtxGroup::Context object to track it.
+     * On destruction of the returned Context, the OperationContext is destroyed and its
+     * corresponding entry in *this is erased.
+     */
+    Context makeOpCtx(Client& client);
+
+    /**
+     * Takes ownership of the OperationContext from `ctx`, and returns an OpCtxGroup::Context object
+     * to track it.  On destruction of the Context, its entry in *this is erased and its
      * OperationContext is destroyed.
      */
     Context adopt(UniqueOperationContext&& ctx);
+
+    /**
+     * Moves the OperationContext of `ctx` from its current OpCtxGroup to *this.  Do this to protect
+     * an OperationContext from being interrupted along with the rest of the other group, or to
+     * expose it to this->interrupt().  Taking from a Context already in *this is equivalent to
+     * moving from `ctx`. Taking from a moved-from Context yields another moved-from Context.
+     */
+    Context take(Context&& ctx);
 
     /*
      * Interrupts all the OperationContexts maintained in *this.
      */
     void interrupt(ErrorCodes::Error code);
+
+    /**
+     * Reports whether any OperationContexts are extant.
+     */
+    bool isEmpty() const { return _contexts.empty(); }
 
 private:
     void _erase(OperationContext* ctx);
@@ -63,11 +84,12 @@ private:
 };
 
 class OpCtxGroup::Context {
-    /*
+    /**
      * Keeps one OperationContext*, and on destruction unregisters and destroys the associated
-     * UniqueOperationContext and its OperationContext.
+     * OperationContext.  May be used as if it were an OperationContext*.
      *
-     * The lifetime of an OpCtxGroup::Ctx object must not exceed that of its OpCtxGroup.
+     * The lifetime of an OpCtxGroup::Context object must not exceed that of its OpCtxGroup, unless
+     * it has been moved from, taken from (see OpCtxGroup::take), or released.
      */
 public:
     Context() = delete;
@@ -75,12 +97,31 @@ public:
     Context& operator=(Context&) = delete;
     Context(Context&&) = default;
     Context& operator=(Context&&) = default;
-    ~Context() {
-        _opCtx ? _ctxGroup._erase(_opCtx) : void();
-    }
-    OperationContext* ctx() {
+    ~Context() { release(); }
+
+    /**
+     * Returns a pointer to the tracked OperationContext, or nullptr if *this has been moved from.
+     */
+    OperationContext* opCtx() const {
         return _opCtx;
     }
+    /**
+     * These enable treating a Context as if it were an OperationContext*.
+     */
+    operator OperationContext*() const {
+        dassert(_opCtx != nullptr);
+        return _opCtx;
+    }
+    OperationContext* operator->() const {
+        dassert(_opCtx != nullptr);
+        return _opCtx;
+    }
+
+    /**
+     * Destroys and unregisters the corresponding OperationContext.  After this operation, *this is
+     * an xvalue and can only be assigned or destroyed.
+     */
+    void release();
 
 private:
     Context(OperationContext* ctx, OpCtxGroup& group) : _opCtx(ctx), _ctxGroup(group) {
