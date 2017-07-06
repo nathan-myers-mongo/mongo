@@ -59,15 +59,15 @@ public:
      * to track it.  On destruction of the Context, its entry in *this is erased and its
      * OperationContext is destroyed.
      */
-    Context adopt(UniqueOperationContext&& ctx);
+    Context adopt(UniqueOperationContext ctx);
 
     /**
-     * Moves the OperationContext of `ctx` from its current OpCtxGroup to *this.  Do this to protect
-     * an OperationContext from being interrupted along with the rest of the other group, or to
-     * expose it to this->interrupt().  Taking from a Context already in *this is equivalent to
+     * Moves the OperationContext of `ctx` from its current OpCtxGroup into *this.  Do this to
+     * protect an OperationContext from being interrupted along with the rest of the other group, or
+     * to expose it to this->interrupt().  Taking from a Context already in *this is equivalent to
      * moving from `ctx`. Taking from a moved-from Context yields another moved-from Context.
      */
-    Context take(Context&& ctx);
+    Context take(Context ctx);
 
     /*
      * Interrupts all the OperationContexts maintained in *this.

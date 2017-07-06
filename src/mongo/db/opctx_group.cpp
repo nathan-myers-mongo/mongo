@@ -36,17 +36,17 @@ auto OpCtxGroup::makeOpCtx(Client& client) -> Context {
     return adopt(client.makeOperationContext());
 }
 
-auto OpCtxGroup::adopt(UniqueOperationContext&& ctx) -> Context {
-    _contexts.emplace_back(std::forward<UniqueOperationContext>(ctx));
+auto OpCtxGroup::adopt(UniqueOperationContext ctx) -> Context {
+    _contexts.emplace_back(std::move(ctx));
     return Context(_contexts.back().get(), *this);
 }
 
-auto OpCtxGroup::take(Context&& ctx) -> Context {
+auto OpCtxGroup::take(Context ctx) -> Context {
     if (ctx._opCtx == nullptr) {  // Already been moved from?
         return Context(nullptr, *this);
     }
     if (&ctx._ctxGroup == this) {  // Already here?
-        return std::forward<OpCtxGroup::Context>(ctx);
+        return std::move(ctx);
     }
     auto& others = ctx._ctxGroup._contexts;
     auto it = std::find_if(others.begin(), others.end(), [cp = ctx._opCtx](auto const& uoc) {
