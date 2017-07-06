@@ -28,6 +28,7 @@
 
 #pragma once
 
+#include "mongo/db/opctx_group.h"
 #include "mongo/db/s/namespace_metadata_change_notifications.h"
 #include "mongo/s/catalog_cache_loader.h"
 #include "mongo/util/concurrency/thread_pool.h"
