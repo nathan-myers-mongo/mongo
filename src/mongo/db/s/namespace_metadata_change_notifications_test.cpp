@@ -30,7 +30,6 @@
 
 #include "mongo/db/operation_context_noop.h"
 #include "mongo/db/s/namespace_metadata_change_notifications.h"
-#include "mongo/db/s/opctx_group.h"
 #include "mongo/db/service_context_noop.h"
 #include "mongo/stdx/memory.h"
 #include "mongo/stdx/thread.h"
@@ -60,17 +59,6 @@ private:
     ServiceContextNoop _serviceCtx;
     ServiceContext::UniqueClient _client;
 };
-
-TEST_F(NamespaceMetadataChangeNotificationsTest, OpCtxGroup) {
-    {
-        OpCtxGroup group;
-        auto ctx = group.adopt(client()->makeOperationContext());
-        OperationContext* opCtx = ctx.ctx();
-        ASSERT_TRUE(opCtx->checkForInterruptNoAssert().isOK());
-        group.interrupt(ErrorCodes::InternalError);
-        ASSERT_FALSE(opCtx->checkForInterruptNoAssert().isOK());
-    }
-}
 
 TEST_F(NamespaceMetadataChangeNotificationsTest, WaitForNotify) {
     NamespaceMetadataChangeNotifications notifications;

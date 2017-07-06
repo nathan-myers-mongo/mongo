@@ -34,6 +34,7 @@
 #include "mongo/db/json.h"
 #include "mongo/db/logical_session_id.h"
 #include "mongo/db/operation_context.h"
+#include "mongo/db/opctx_group.h"
 #include "mongo/db/service_context.h"
 #include "mongo/db/service_context_noop.h"
 #include "mongo/stdx/future.h"
@@ -168,6 +169,18 @@ TEST(OperationContextTest, InitializeOperationSessionInfo_SessionIdAndTransactio
 
     ASSERT(opCtx->getTxnNumber());
     ASSERT_EQ(100, *opCtx->getTxnNumber());
+}
+
+TEST(OperationContextTest, OpCtxGroupSmoke) {
+    auto serviceCtx = stdx::make_unique<ServiceContextNoop>();
+    auto client = serviceCtx->makeClient("OperationContextTest");
+
+    OpCtxGroup group;
+    auto ctx = group.adopt(client->makeOperationContext());
+    OperationContext* opCtx = ctx.ctx();
+    ASSERT_TRUE(opCtx->checkForInterruptNoAssert().isOK());
+    group.interrupt(ErrorCodes::InternalError);
+    ASSERT_FALSE(opCtx->checkForInterruptNoAssert().isOK());
 }
 
 class OperationDeadlineTests : public unittest::Test {

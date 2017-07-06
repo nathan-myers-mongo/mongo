@@ -90,26 +90,7 @@ private:
     OperationContext* _opCtx;
     OpCtxGroup& _ctxGroup;
 
-    friend OpCtxGroup;
+    friend class OpCtxGroup;
 };
-
-inline auto OpCtxGroup::adopt(UniqueOperationContext&& ctx) -> OpCtxGroup::Context {
-    _contexts.emplace_back(std::forward<UniqueOperationContext>(ctx));
-    return Context(_contexts.back().get(), *this);
-}
-
-inline void OpCtxGroup::interrupt(ErrorCodes::Error code) {
-    for (auto&& uniqueOperationContext : _contexts) {
-        auto* opCtx = uniqueOperationContext.get();
-        opCtx->getServiceContext()->killOperation(opCtx, code);
-    }
-}
-
-inline void OpCtxGroup::_erase(OperationContext* ctx) {
-    auto it = std::find_if(
-        _contexts.begin(), _contexts.end(), [ctx](auto const& uoc) { return uoc.get() == ctx; });
-    invariant(it != _contexts.end());
-    _contexts.erase(it);
-}
 
 }  // namespace mongo
