@@ -42,13 +42,16 @@ auto OpCtxGroup::adopt(UniqueOperationContext&& ctx) -> Context {
 }
 
 auto OpCtxGroup::take(Context&& ctx) -> Context {
-    if (ctx._opCtx == nullptr)  // Already been moved from?
+    if (ctx._opCtx == nullptr) {  // Already been moved from?
         return Context(nullptr, *this);
+    }
     if (&ctx._ctxGroup == this) {  // Already here?
         return std::forward<OpCtxGroup::Context>(ctx);
     }
-    auto it = std::find_if(ctx._ctxGroup._contexts.begin(), ctx._ctxGroup._contexts.end(),
-        [ cp = ctx._opCtx ](auto const& uoc) { return uoc.get() == cp; });
+    auto& others = ctx._ctxGroup._contexts;
+    auto it = std::find_if(others.begin(), others.end(), [cp = ctx._opCtx](auto const& uoc) {
+        return uoc.get() == cp;
+    });
     invariant(it != ctx._ctxGroup._contexts.end());
     _contexts.emplace_back(std::move(*it));
     ctx._opCtx = nullptr;

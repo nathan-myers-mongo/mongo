@@ -35,13 +35,13 @@
 namespace mongo {
 
 class OpCtxGroup {
-    using UniqueOperationContext = ServiceContext::UniqueOperationContext;
     /**
      * Maintains a collection of UniqueOperationContext objects so that they may be killed on a
      * common event, such as from a stepdown callback.  On destruction, destroys all its owned
      * OperationContext objects.
      */
 public:
+    using UniqueOperationContext = ServiceContext::UniqueOperationContext;
     class Context;
     friend class Context;
 
@@ -75,7 +75,9 @@ public:
     /**
      * Reports whether any OperationContexts are extant.
      */
-    bool isEmpty() const { return _contexts.empty(); }
+    bool isEmpty() const {
+        return _contexts.empty();
+    }
 
 private:
     void _erase(OperationContext* ctx);
@@ -97,7 +99,9 @@ public:
     Context& operator=(Context&) = delete;
     Context(Context&&) = default;
     Context& operator=(Context&&) = default;
-    ~Context() { release(); }
+    ~Context() {
+        release();
+    }
 
     /**
      * Returns a pointer to the tracked OperationContext, or nullptr if *this has been moved from.
@@ -105,6 +109,7 @@ public:
     OperationContext* opCtx() const {
         return _opCtx;
     }
+
     /**
      * These enable treating a Context as if it were an OperationContext*.
      */
