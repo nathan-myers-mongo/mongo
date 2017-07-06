@@ -66,8 +66,9 @@ TEST_F(NamespaceMetadataChangeNotificationsTest, OpCtxGroup) {
         OpCtxGroup group;
         auto ctx = group.adopt(client()->makeOperationContext());
         OperationContext* opCtx = ctx.ctx();
-        group.kill();
-        ASSERT_TRUE(opCtx->isKilled());
+        ASSERT_TRUE(opCtx->checkForInterruptNoAssert().isOK());
+        group.interrupt(ErrorCodes::InternalError);
+        ASSERT_FALSE(opCtx->checkForInterruptNoAssert().isOK());
     }
 }
 

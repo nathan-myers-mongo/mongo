@@ -30,70 +30,86 @@
 
 #include "mongo/db/client.h"
 #include "mongo/db/operation_context.h"
+#include "mongo/db/service_context.h"
 
 namespace mongo {
 
-/*
- * Maintains a collection of UniqueOperationContext objects so that they may be killed on a common
- * event, such as from a stepdown callback.  On destruction, destroys all its contexts.
- */
 class OpCtxGroup {
-
+    using UniqueOperationContext = ServiceContext::UniqueOperationContext;
     /*
-     * Keeps one pointer to OperationContext, and on destruction unregisters and destroys the
-     * associated UniqueOperationContext.
-     *
-     * The lifetime of an OpCtxGroup::Keeper object must not exceed that of its OpCtxGroup.
+     * Maintains a collection of UniqueOperationContext objects so that they may be killed on a
+     * common event, such as from a stepdown callback.  On destruction, destroys all its contexts.
      */
-    class Keeper {
-    public:
-        Keeper() = delete;
-        Keeper(Keeper&) = delete;
-        Keeper& operator=(Keeper&) = delete;
-        Keeper(Keeper&&) = default;
-        Keeper& operator=(Keeper&&) = default;
-        ~Keeper() {
-            ctx ? _ctxs._remove(_ctx) : void();
-        }
-
-        OperationContext* ctx() {
-            return _ctx;
-        }
-
-    private:
-        Context(OperationContext* ctx, OpCtxGroup& group) : _ctx(ctx), _ctxGroup(group) {}
-
-        OperationContext* _ctx;
-        OpCtxGroup& _ctxGroup;
-    };
-
 public:
+    class Context;
+    friend class Context;
+
     /*
      * Takes ownership of a UniqueOperationContext, and returns an OpCtxGroup::Context object to
-     * track it.  On destruction of the Context, its entry in *this is erased.
+     * track it.  On destruction of the Context, its entry in *this is erased and its
+     * OperationContext is destroyed.
      */
-    Context adopt(UniqueOperationContext&& ctx) {
-        _ctxs.emplace_back(ctx);
-        return Context(_ctxs.back().get(), *this);
-    }
+    Context adopt(UniqueOperationContext&& ctx);
 
     /*
-     * Marks all the opCtx pointers maintained in *this as killed.
+     * Interrupts all the OperationContexts maintained in *this.
      */
-    void kill() {
-        for (auto&& uoc : _ctxs) {
-            uoc.get().markAsKilled();
-        }
+    void interrupt(ErrorCodes::Error code);
+
+private:
+    void _erase(OperationContext* ctx);
+
+    std::vector<UniqueOperationContext> _contexts;
+};
+
+class OpCtxGroup::Context {
+    /*
+     * Keeps one OperationContext*, and on destruction unregisters and destroys the associated
+     * UniqueOperationContext and its OperationContext.
+     *
+     * The lifetime of an OpCtxGroup::Ctx object must not exceed that of its OpCtxGroup.
+     */
+public:
+    Context() = delete;
+    Context(Context&) = delete;
+    Context& operator=(Context&) = delete;
+    Context(Context&&) = default;
+    Context& operator=(Context&&) = default;
+    ~Context() {
+        _opCtx ? _ctxGroup._erase(_opCtx) : void();
+    }
+    OperationContext* ctx() {
+        return _opCtx;
     }
 
 private:
-    void _remove(OperationContext* ctx) {
-        auto it = std::find_if(
-            _ctxs.begin(), _ctxs.end(), [ctx](auto const& uoc) { return uoc.get() == ctx; });
-        invariant(it != _ctxs.end());
-        _ctxs.erase(it);
+    Context(OperationContext* ctx, OpCtxGroup& group) : _opCtx(ctx), _ctxGroup(group) {
+        dassert(ctx);
     }
-    std::vector<UniqueOperationContext> _ctxs;
+
+    OperationContext* _opCtx;
+    OpCtxGroup& _ctxGroup;
+
+    friend OpCtxGroup;
 };
+
+inline auto OpCtxGroup::adopt(UniqueOperationContext&& ctx) -> OpCtxGroup::Context {
+    _contexts.emplace_back(std::forward<UniqueOperationContext>(ctx));
+    return Context(_contexts.back().get(), *this);
+}
+
+inline void OpCtxGroup::interrupt(ErrorCodes::Error code) {
+    for (auto&& uniqueOperationContext : _contexts) {
+        auto* opCtx = uniqueOperationContext.get();
+        opCtx->getServiceContext()->killOperation(opCtx, code);
+    }
+}
+
+inline void OpCtxGroup::_erase(OperationContext* ctx) {
+    auto it = std::find_if(
+        _contexts.begin(), _contexts.end(), [ctx](auto const& uoc) { return uoc.get() == ctx; });
+    invariant(it != _contexts.end());
+    _contexts.erase(it);
+}
 
 }  // namespace mongo
