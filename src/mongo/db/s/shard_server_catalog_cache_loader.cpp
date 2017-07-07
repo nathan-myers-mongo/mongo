@@ -1,5 +1,4 @@
-/**
- *    Copyright (C) 2017 MongoDB Inc.
+/** *    Copyright (C) 2017 MongoDB Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -33,8 +32,8 @@
 #include "mongo/db/s/shard_server_catalog_cache_loader.h"
 
 #include "mongo/db/client.h"
-#include "mongo/db/opctx_group.h"
 #include "mongo/db/operation_context.h"
+#include "mongo/db/operation_context_group.h"
 #include "mongo/db/s/shard_metadata_util.h"
 #include "mongo/s/catalog/type_shard_collection.h"
 #include "mongo/s/catalog_cache.h"
