@@ -26,56 +26,73 @@
  *    then also delete it in the license file.
  */
 
-#include "mongo/db/opctx_group.h"
+#include "mongo/platform/basic.h"
+
+#include "mongo/db/operation_context_group.h"
+
 #include "mongo/db/operation_context.h"
 #include "mongo/db/service_context.h"
 
 namespace mongo {
 
-auto OpCtxGroup::makeOpCtx(Client& client) -> Context {
-    return adopt(client.makeOperationContext());
-}
+namespace {
 
-auto OpCtxGroup::adopt(UniqueOperationContext ctx) -> Context {
-    _contexts.emplace_back(std::move(ctx));
-    return Context(_contexts.back().get(), *this);
-}
-
-auto OpCtxGroup::take(Context ctx) -> Context {
-    if (ctx._opCtx == nullptr) {  // Already been moved from?
-        return Context(nullptr, *this);
-    }
-    if (&ctx._ctxGroup == this) {  // Already here?
-        return ctx;
-    }
-    auto& others = ctx._ctxGroup._contexts;
-    auto it = std::find_if(others.begin(), others.end(), [cp = ctx._opCtx](auto const& uoc) {
-        return uoc.get() == cp;
-    });
-    invariant(it != ctx._ctxGroup._contexts.end());
-    _contexts.emplace_back(std::move(*it));
-    ctx._opCtx = nullptr;
-    ctx._ctxGroup._contexts.erase(it);
-    return Context(_contexts.back().get(), *this);
-}
-
-void OpCtxGroup::interrupt(ErrorCodes::Error code) {
-    for (auto&& uniqueOperationContext : _contexts) {
-        auto* opCtx = uniqueOperationContext.get();
-        opCtx->getServiceContext()->killOperation(opCtx, code);
-    }
-}
-
-void OpCtxGroup::_erase(Context ctx) {
-    OperationContext* p = ctx.opCtx();
-    ctx._opCtx = nullptr;
+template <typename C>
+auto find(C& contexts, OperationContext* cp) {
     auto it = std::find_if(
-        _contexts.begin(), _contexts.end(), [p](auto const& uoc) { return uoc.get() == p; });
-    invariant(it != _contexts.end());
-    _contexts.erase(it);
+        contexts.begin(), contexts.end(), [cp](auto const& opCtx) { return opCtx.get() == cp; });
+    invariant(it != contexts.end());
+    return it;
 }
 
-void OpCtxGroup::Context::release() {
+auto interrupt_one(OperationContext* opCtx, ErrorCodes::Error code) {
+    std::lock_guard<Client> lk(*opCtx->getClient());
+    opCtx->getServiceContext()->killOperation(opCtx, code);
+}
+
+}  // namespace
+
+auto OperationContextGroup::makeOperationContext(Client& client) -> Context {
+    auto opCtx = client.makeOperationContext();
+    return adopt(std::move(opCtx));
+}
+
+auto OperationContextGroup::adopt(UniqueOperationContext opCtx) -> Context {
+    _contexts.emplace_back(std::move(opCtx));
+    if (_interrupted) {
+        interrupt_one(_contexts.back().get(), _interrupted);
+    }
+    return Context(_contexts.back().get(), *this);
+}
+
+auto OperationContextGroup::take(Context ctx) -> Context {
+    if (ctx._opCtx == nullptr) {
+        return Context(nullptr, *this);  // Already been moved from.
+    }
+    if (&ctx._ctxGroup == this) {
+        return ctx;  // Already here.
+    }
+    auto it = find(ctx._ctxGroup._contexts, ctx._opCtx);
+    _contexts.emplace_back(std::move(*it));
+    ctx._ctxGroup._contexts.erase(it);
+    ctx._opCtx = nullptr;
+    return Context(_contexts.back().get(), *this);
+}
+
+void OperationContextGroup::interrupt(ErrorCodes::Error code) {
+    invariant(code);
+    _interrupted = code;
+    for (auto&& uniqueOperationContext : _contexts) {
+        interrupt_one(uniqueOperationContext.get(), code);
+    }
+}
+
+void OperationContextGroup::_erase(Context ctx) {
+    _contexts.erase(find(_contexts, ctx.context()));
+    ctx._opCtx = nullptr;  // Keep the OperationContext from being erased again.
+}
+
+void OperationContextGroup::Context::release() {
     if (_opCtx) {
         _ctxGroup._erase(std::move(*this));
     }
