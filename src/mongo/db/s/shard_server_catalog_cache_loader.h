@@ -28,7 +28,7 @@
 
 #pragma once
 
-#include "mongo/db/opctx_group.h"
+#include "mongo/db/operation_context_group.h"
 #include "mongo/db/s/namespace_metadata_change_notifications.h"
 #include "mongo/s/catalog_cache_loader.h"
 #include "mongo/util/concurrency/thread_pool.h"
@@ -324,7 +324,7 @@ private:
     ReplicaSetRole _role{ReplicaSetRole::None};
 
     // The collection of operation contexts in use by all threads.
-    OpCtxGroup _contexts;
+    OperationContextGroup _contexts;
 };
 
 }  // namespace mongo
