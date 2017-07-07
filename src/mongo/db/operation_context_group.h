@@ -43,6 +43,12 @@ public:
     using UniqueOperationContext = ServiceContext::UniqueOperationContext;
     class Context;
 
+    OperationContextGroup() = default;
+    ~OperationContextGroup() {
+        invariant(isEmpty());
+    }
+
+
     /**
      * Makes an OperationContext on `client` and returns a Context object to track it.  On
      * destruction of the returned Context, the OperationContext is destroyed and its corresponding
@@ -118,7 +124,7 @@ public:
     /**
      * Returns a pointer to the tracked OperationContext, or nullptr if *this has been moved from.
      */
-    OperationContext* context() const {
+    OperationContext* opCtx() const {
         return _opCtx;
     }
 

@@ -214,7 +214,7 @@ TEST(OperationContextTest, OpCtxGroup) {
         group2.interrupt(ErrorCodes::InternalError);
         ASSERT_FALSE(opCtx2->checkForInterruptNoAssert().isOK());
         opCtx2.release();
-        ASSERT(opCtx2.context() == nullptr);
+        ASSERT(opCtx2.opCtx() == nullptr);
         ASSERT_TRUE(group2.isEmpty());
     }
 
@@ -224,10 +224,10 @@ TEST(OperationContextTest, OpCtxGroup) {
         auto serviceCtx = stdx::make_unique<ServiceContextNoop>();
         auto client3 = serviceCtx->makeClient("OperationContextTest3");
         auto opCtx3 = group3.makeOperationContext(*client3);
-        auto p3 = opCtx3.context();
+        auto p3 = opCtx3.opCtx();
         auto opCtx4 = group4.take(std::move(opCtx3));
-        ASSERT_EQ(p3, opCtx4.context());
-        ASSERT(opCtx3.context() == nullptr);
+        ASSERT_EQ(p3, opCtx4.opCtx());
+        ASSERT(opCtx3.opCtx() == nullptr);
         ASSERT_TRUE(group3.isEmpty());
         ASSERT_FALSE(group4.isEmpty());
         group3.interrupt(ErrorCodes::InternalError);

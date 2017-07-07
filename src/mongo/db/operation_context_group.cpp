@@ -45,7 +45,7 @@ auto find(C& contexts, OperationContext* cp) {
     return it;
 }
 
-auto interrupt_one(OperationContext* opCtx, ErrorCodes::Error code) {
+auto interruptOne(OperationContext* opCtx, ErrorCodes::Error code) {
     std::lock_guard<Client> lk(*opCtx->getClient());
     opCtx->getServiceContext()->killOperation(opCtx, code);
 }
@@ -60,7 +60,7 @@ auto OperationContextGroup::makeOperationContext(Client& client) -> Context {
 auto OperationContextGroup::adopt(UniqueOperationContext opCtx) -> Context {
     _contexts.emplace_back(std::move(opCtx));
     if (_interrupted) {
-        interrupt_one(_contexts.back().get(), _interrupted);
+        interruptOne(_contexts.back().get(), _interrupted);
     }
     return Context(_contexts.back().get(), *this);
 }
@@ -83,12 +83,12 @@ void OperationContextGroup::interrupt(ErrorCodes::Error code) {
     invariant(code);
     _interrupted = code;
     for (auto&& uniqueOperationContext : _contexts) {
-        interrupt_one(uniqueOperationContext.get(), code);
+        interruptOne(uniqueOperationContext.get(), code);
     }
 }
 
 void OperationContextGroup::_erase(Context ctx) {
-    _contexts.erase(find(_contexts, ctx.context()));
+    _contexts.erase(find(_contexts, ctx._opCtx));
     ctx._opCtx = nullptr;  // Keep the OperationContext from being erased again.
 }
 
