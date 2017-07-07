@@ -147,12 +147,11 @@ bool opReplicatedEnough(OperationContext* opCtx,
     WriteConcernResult writeConcernResult;
     writeConcernResult.wTimedOut = false;
 
-    Status waitForMajorityWriteConcernStatus =
+    Status majorityStatus =
         waitForWriteConcern(opCtx, lastOpApplied, kMajorityWriteConcern, &writeConcernResult);
-    if (!waitForMajorityWriteConcernStatus.isOK()) {
+    if (!majorityStatus.isOK()) {
         if (!writeConcernResult.wTimedOut) {
-            opCtx->getServiceContext()->killOperation(opCtx,
-                                                      waitForMajorityWriteConcernStatus.code());
+            uassertStatusOK(majorityStatus);
         }
         return false;
     }
@@ -163,15 +162,14 @@ bool opReplicatedEnough(OperationContext* opCtx,
     userWriteConcern.wTimeout = -1;
     writeConcernResult.wTimedOut = false;
 
-    Status waitForUserWriteConcernStatus =
+    Status userStatus =
         waitForWriteConcern(opCtx, lastOpApplied, userWriteConcern, &writeConcernResult);
-    if (!waitForUserWriteConcernStatus.isOK()) {
+    if (!userStatus.isOK()) {
         if (!writeConcernResult.wTimedOut) {
-            opCtx->getServiceContext()->killOperation(opCtx, waitForUserWriteConcernStatus.code());
+            uassertStatusOK(userStatus);
         }
         return false;
     }
-
     return true;
 }
 
