@@ -26,11 +26,14 @@
  *    it in the license file.
  */
 
+#define MONGO_LOG_DEFAULT_COMPONENT ::mongo::logger::LogComponent::kSharding
+
 #include "mongo/platform/basic.h"
 
 #include "mongo/db/s/shard_metadata_util.h"
 
 #include "mongo/client/dbclientinterface.h"
+#include "mongo/db/db_raii.h"
 #include "mongo/db/dbdirectclient.h"
 #include "mongo/db/write_concern_options.h"
 #include "mongo/rpc/get_status_from_command_result.h"
@@ -41,6 +44,7 @@
 #include "mongo/s/write_ops/batched_command_request.h"
 #include "mongo/s/write_ops/batched_command_response.h"
 #include "mongo/stdx/memory.h"
+#include "mongo/util/log.h"
 
 namespace mongo {
 namespace shardmetadatautil {
@@ -273,8 +277,18 @@ Status updateShardChunks(OperationContext* opCtx,
 
     NamespaceString chunkMetadataNss(ChunkType::ShardNSPrefix + nss.ns());
 
+    auto collectionExists = [](auto opCtx, auto const& nss) {
+        return AutoGetCollection(opCtx, nss, MODE_IX).getCollection() != nullptr;
+    };
+    bool needIndex = not collectionExists(opCtx, chunkMetadataNss);
+
     try {
         DBDirectClient client(opCtx);
+
+        if (needIndex) {
+            log() << "Creating index for shard chunk metadata " << chunkMetadataNss.ns();
+            client.createIndex(chunkMetadataNss.ns(), BSON(ChunkType::min() << 1));
+        }
 
         /**
          * Here are examples of the operations that can happen on the config server to update

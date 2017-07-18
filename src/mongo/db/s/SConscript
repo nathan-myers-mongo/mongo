@@ -26,6 +26,7 @@ env.Library(
     ],
     LIBDEPS=[
         '$BUILD_DIR/mongo/client/clientdriver',
+        '$BUILD_DIR/mongo/db/db_db_raii',
         '$BUILD_DIR/mongo/db/dbdirectclient',
         '$BUILD_DIR/mongo/s/common',
     ],
