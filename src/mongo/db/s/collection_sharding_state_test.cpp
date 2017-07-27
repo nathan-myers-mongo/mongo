@@ -1,5 +1,4 @@
-/**
- *    Copyright (C) 2016 MongoDB Inc.
+/*    Copyright (C) 2016 MongoDB Inc.
  *
  *    This program is free software: you can redistribute it and/or  modify
  *    it under the terms of the GNU Affero General Public License, version 3,
@@ -31,6 +30,7 @@
 #include "mongo/db/s/collection_sharding_state.h"
 
 #include "mongo/db/concurrency/d_concurrency.h"
+#include "mongo/db/db_raii.h"
 #include "mongo/db/namespace_string.h"
 #include "mongo/db/s/collection_metadata.h"
 #include "mongo/db/s/sharding_state.h"
@@ -163,6 +163,41 @@ TEST_F(CollShardingStateTest, GlobalInitDoesntGetsCalledIfShardIdentityDocWasNot
     wuow.commit();
 
     ASSERT_EQ(0, getInitCallCount());
+}
+
+namespace {
+
+NamespaceString testNss("testDB", "TestColl");
+
+auto makeAMetadata() -> std::unique_ptr<CollectionMetadata> {
+    const OID epoch = OID::gen();
+    KeyPattern keyPattern(BSON("key" << 1 << "key3" << 1));
+    auto range = ChunkRange{BSON("key" << MINKEY << "key3" << MINKEY),
+                            BSON("key" << MAXKEY << "key3" << MAXKEY)};
+    auto chunk = ChunkType(testNss, std::move(range), ChunkVersion(1, 0, epoch), ShardId("other"));
+    auto cm = ChunkManager::makeNew(testNss, keyPattern, nullptr, false, epoch, {std::move(chunk)});
+    return stdx::make_unique<CollectionMetadata>(cm, ShardId("this"));
+}
+
+}  // namespace
+
+TEST_F(CollShardingStateTest, MakeDeleteState) {
+    AutoGetCollection autoColl(operationContext(), testNss, MODE_IX);
+    auto* css = CollectionShardingState::get(operationContext(), testNss);
+
+    // clang-format off
+    auto deleteState1 =
+        CollectionShardingState::DeleteState(operationContext(), css, BSON("_id" << "hello"));
+    ASSERT_BSONOBJ_EQ(deleteState1.documentKey, BSON("_id" << "hello"));
+    ASSERT_FALSE(deleteState1.isMigrating);
+
+    css->refreshMetadata(operationContext(), makeAMetadata());
+    auto doc = BSON("_id" << "hello" << "key" << 3 << "key2" << true << "key3" << "abc");
+
+    auto deleteState2 = CollectionShardingState::DeleteState(operationContext(), css, doc);
+    ASSERT_BSONOBJ_EQ(deleteState2.documentKey,
+                      BSON("key" << 3 << "key3" << "abc" << "_id" << "hello"));
+    ASSERT_FALSE(deleteState2.isMigrating);
 }
 
 }  // unnamed namespace
