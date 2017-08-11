@@ -67,7 +67,7 @@ struct OplogUpdateEntryArgs {
     BSONObj criteria;
 
     // True if this update comes from a chunk migration.
-    bool fromMigrate;
+    bool fromMigrate = false;
 };
 
 struct TTLCollModInfo {

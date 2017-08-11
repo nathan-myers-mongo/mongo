@@ -151,20 +151,18 @@ void OpObserverImpl::onUpdate(OperationContext* opCtx, const OplogUpdateEntryArg
         return;
     }
 
-    auto opTime = repl::logOp(opCtx,
-                              "u",
-                              args.nss,
-                              args.uuid,
-                              args.update,
-                              &args.criteria,
-                              args.fromMigrate,
-                              args.stmtId);
-    AuthorizationManager::get(opCtx->getServiceContext())
-        ->logOp(opCtx, "u", args.nss, args.update, &args.criteria);
+    auto* css = CollectionShardingState::get(opCtx, args.nss);
+    BSONObj documentKey = css->getMetadata().extractDocumentKey(args.updatedDoc);
 
-    auto css = CollectionShardingState::get(opCtx, args.nss);
+    // clang-format off
+    auto opTime = repl::logOp(opCtx, "u",
+        args.nss, args.uuid, documentKey, &args.criteria, args.fromMigrate, args.stmtId);
+    AuthorizationManager::get(opCtx->getServiceContext())
+        ->logOp(opCtx, "u", args.nss, documentKey, &args.criteria);
+    // clang-format on
+
     if (!args.fromMigrate) {
-        css->onUpdateOp(opCtx, args.criteria, args.update, args.updatedDoc);
+        css->onUpdateOp(opCtx, args.criteria, documentKey, args.updatedDoc);
     }
 
     if (strstr(args.nss.ns().c_str(), ".system.js")) {
