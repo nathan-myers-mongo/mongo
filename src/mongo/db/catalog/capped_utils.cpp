@@ -221,13 +221,11 @@ mongo::Status mongo::cloneCollectionAsCapped(OperationContext* opCtx,
 
             WriteUnitOfWork wunit(opCtx);
             OpDebug* const nullOpDebug = nullptr;
-            toCollection
-                ->insertDocument(opCtx,
-                                 InsertStatement(objToClone.value()),
-                                 nullOpDebug,
-                                 true,
-                                 opCtx->writesAreReplicated())
-                .transitional_ignore();
+            auto recordIdWith = toCollection->insertDocument(
+                opCtx, InsertStatement(objToClone.value()), nullOpDebug, true);
+            if (!recordIdWith.isOK()) {
+                return recordIdWith.getStatus();
+            }
             wunit.commit();
 
             // Go to the next document
