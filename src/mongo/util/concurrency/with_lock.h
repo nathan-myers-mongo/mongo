@@ -30,6 +30,8 @@
 #include "mongo/stdx/mutex.h"
 #include "mongo/util/invariant.h"
 
+#include <utility>
+
 namespace mongo {
 
 /**
@@ -64,10 +66,25 @@ namespace mongo {
  *
  */
 struct WithLock {
-    WithLock(stdx::lock_guard<stdx::mutex> const&) {}
+    WithLock(stdx::lock_guard<stdx::mutex> const&) noexcept {}
     WithLock(stdx::unique_lock<stdx::mutex> const& lock) {
         invariant(lock.owns_lock());
     }
+    WithLock(WithLock const&) noexcept {}
+    WithLock(WithLock&&) = default;
+
+    // No assigning WithLocks.
+    void operator=(WithLock const&) = delete;
+    void operator=(WithLock&&) = delete;
+
+    // No moving in a unique_lock<>.
+    WithLock(stdx::unique_lock<stdx::mutex>&&) = delete;
 };
 
 }  // namespace mongo
+
+namespace std {
+// No explicitly moving a WithLock:
+template <>
+mongo::WithLock&& move<mongo::WithLock>(mongo::WithLock&&) = delete;
+}  // namespace std
