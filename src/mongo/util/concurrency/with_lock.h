@@ -55,7 +55,7 @@ namespace mongo {
  * The call to such a function looks like this:
  *
  *     stdx::lock_guard<stdx::mutex> lk;
- *     _init(lk, opCtx);  // instead of _clear_inlock(opCtx)
+ *     _init(lk, opCtx);  // instead of _init_inlock(opCtx)
  *
  * Note that the formal argument need not (and should not) be named unless it is needed to pass
  * along to another function:
