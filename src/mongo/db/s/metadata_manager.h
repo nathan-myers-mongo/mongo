@@ -40,6 +40,7 @@
 #include "mongo/executor/task_executor.h"
 #include "mongo/s/catalog/type_chunk.h"
 #include "mongo/stdx/memory.h"
+#include "mongo/util/concurrency/with_lock.h"
 #include "mongo/util/concurrency/notification.h"
 
 namespace mongo {
@@ -141,65 +142,64 @@ public:
     boost::optional<KeyRange> getNextOrphanRange(BSONObj const& from);
 
 private:
-    // All of the following functions must be called while holding _managerLock.
-
     /**
      * Cancels all scheduled deletions of orphan ranges, notifying listeners with specified status.
      */
-    void _clearAllCleanups(Status);
+    void _clearAllCleanups(Status, WithLock);
 
     /**
      * Cancels all scheduled deletions of orphan ranges, notifying listeners with status
      * InterruptedDueToReplStateChange.
      */
-    void _clearAllCleanups();
+    void _clearAllCleanups(WithLock);
 
     /**
      * Retires any metadata that has fallen out of use, and pushes any orphan ranges found in them
      * to the list of ranges actively being cleaned up.
      */
-    void _retireExpiredMetadata();
+    void _retireExpiredMetadata(WithLock);
 
     /**
      * Pushes current set of chunks, if any, to _metadataInUse, replaces it with newMetadata.
      */
-    void _setActiveMetadata_inlock(std::unique_ptr<CollectionMetadata> newMetadata);
+    void _setActiveMetadata(std::unique_ptr<CollectionMetadata> newMetadata, WithLock);
 
     /**
      * Returns true if the specified range overlaps any chunk that might be currently in use by a
      * running query.
      */
 
-    bool _overlapsInUseChunk(ChunkRange const& range);
+    bool _overlapsInUseChunk(ChunkRange const& range, WithLock);
 
     /**
      * Returns a notification if any range (possibly) still in use, but scheduled for cleanup,
      * overlaps the argument range.
      */
-    auto _overlapsInUseCleanups(ChunkRange const& range) -> boost::optional<CleanupNotification>;
+    auto _overlapsInUseCleanups(ChunkRange const& range, WithLock)
+        -> boost::optional<CleanupNotification>;
 
     /**
      * Copies the argument range to the list of ranges scheduled for immediate deletion, and
      * schedules a a background task to perform the work.
      */
-    auto _pushRangeToClean(ChunkRange const& range, Date_t when) -> CleanupNotification;
+    auto _pushRangeToClean(ChunkRange const& range, Date_t when, WithLock) -> CleanupNotification;
 
     /**
      * Splices the argument list elements to the list of ranges scheduled for immediate deletion,
      * and schedules a a background task to perform the work.
      */
-    void _pushListToClean(std::list<Deletion> range);
+    void _pushListToClean(std::list<Deletion> range, WithLock);
 
     /**
      * Adds a range from the receiving map, so getNextOrphanRange will skip ranges migrating in.
      */
-    void _addToReceiving(ChunkRange const& range);
+    void _addToReceiving(ChunkRange const& range, WithLock);
 
     /**
      * Removes a range from the receiving map after a migration failure. The range must
      * exactly match an element of _receivingChunks.
      */
-    void _removeFromReceiving(ChunkRange const& range);
+    void _removeFromReceiving(ChunkRange const& range, WithLock);
 
     // data members
 
@@ -289,12 +289,11 @@ private:
      * Must be called with manager->_managerLock held.  Arguments must be non-null.
      */
     ScopedCollectionMetadata(std::shared_ptr<MetadataManager> manager,
-                             std::shared_ptr<CollectionMetadata> metadata);
+                             std::shared_ptr<CollectionMetadata> metadata,
+                             WithLock);
 
     /**
      * Disconnect from the CollectionMetadata, possibly triggering GC of unused CollectionMetadata.
-     *
-     * Must be called with manager->_managerLock held.
      */
     void _clear();
 

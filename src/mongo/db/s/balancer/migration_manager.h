@@ -43,6 +43,7 @@
 #include "mongo/stdx/condition_variable.h"
 #include "mongo/stdx/mutex.h"
 #include "mongo/stdx/unordered_map.h"
+#include "mongo/util/concurrency/with_lock.h"
 #include "mongo/util/concurrency/notification.h"
 
 namespace mongo {
@@ -194,9 +195,10 @@ private:
      * The distributed lock is acquired before scheduling the first migration for the collection and
      * is only released when all active migrations on the collection have finished.
      */
-    void _schedule_inlock(OperationContext* opCtx,
-                          const HostAndPort& targetHost,
-                          Migration migration);
+    void _schedule(OperationContext* opCtx,
+                   const HostAndPort& targetHost,
+                   Migration migration,
+                   WithLock);
 
     /**
      * Used internally for migrations scheduled with the distributed lock acquired by the config
@@ -204,15 +206,16 @@ private:
      * passed iterator and if this is the last migration for the collection will free the collection
      * distributed lock.
      */
-    void _complete_inlock(OperationContext* opCtx,
-                          MigrationsList::iterator itMigration,
-                          const executor::RemoteCommandResponse& remoteCommandResponse);
+    void _complete(OperationContext* opCtx,
+                   MigrationsList::iterator itMigration,
+                   const executor::RemoteCommandResponse& remoteCommandResponse,
+                   WithLock);
 
     /**
      * If the state of the migration manager is kStopping, checks whether there are any outstanding
      * scheduled requests and if there aren't any signals the class condition variable.
      */
-    void _checkDrained_inlock();
+    void _checkDrained(WithLock);
 
     /**
      * Blocking call, which waits for the migration manager to leave the recovering state (if it is
