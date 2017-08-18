@@ -42,43 +42,51 @@ namespace mongo {
  * It may be used to modernize code from (something like) this
  *
  *     // Member _lock must be held when calling this.
- *     void _clear_inlock() {
- *         _stuff = nullptr;
+ *     void _init_inlock(OperationContext* opCtx) {
+ *         _stuff = makeStuff(opCtx);
  *     }
  *
  * to
  *
- *     void _clear(WithLock) {
- *         _stuff = nullptr;
+ *     void _init(WithLock, OperationContext* opCtx) {
+ *         _stuff = makeStuff(opCtx);
  *     }
  *
- * Calling such a function looks like this
+ * The call to such a function looks like this:
  *
  *     stdx::lock_guard<stdx::mutex> lk;
- *     _clear(lk);
+ *     _init(lk, opCtx);  // instead of _clear_inlock(opCtx)
  *
  * Note that the formal argument need not (and should not) be named unless it is needed to pass
  * along to another function:
  *
- *     void _clear(WithLock lock) {
- *         _really_clean_up(lock);
+ *     void _init(WithLock lock, OperationContext* opCtx) {
+ *         _really_init(lock, opCtx);
  *     }
  *
  */
 struct WithLock {
-    WithLock(stdx::lock_guard<stdx::mutex> const&) noexcept {}
-    WithLock(stdx::unique_lock<stdx::mutex> const& lock) {
+    template <typename Mutex>
+    WithLock(stdx::lock_guard<Mutex> const&) noexcept {}
+
+    template <typename Mutex>
+    WithLock(stdx::unique_lock<Mutex> const& lock) {
         invariant(lock.owns_lock());
     }
+
+    // Pass by value is OK.
     WithLock(WithLock const&) noexcept {}
     WithLock(WithLock&&) = default;
+
+    WithLock() = delete;
 
     // No assigning WithLocks.
     void operator=(WithLock const&) = delete;
     void operator=(WithLock&&) = delete;
 
-    // No moving in a unique_lock<>.
-    WithLock(stdx::unique_lock<stdx::mutex>&&) = delete;
+    // No moving a unique_lock<> in.
+    template <typename Mutex>
+    WithLock(stdx::unique_lock<Mutex>&&) = delete;
 };
 
 }  // namespace mongo

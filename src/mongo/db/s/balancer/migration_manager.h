@@ -43,8 +43,8 @@
 #include "mongo/stdx/condition_variable.h"
 #include "mongo/stdx/mutex.h"
 #include "mongo/stdx/unordered_map.h"
-#include "mongo/util/concurrency/with_lock.h"
 #include "mongo/util/concurrency/notification.h"
+#include "mongo/util/concurrency/with_lock.h"
 
 namespace mongo {
 
