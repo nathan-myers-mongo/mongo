@@ -132,13 +132,13 @@ MetadataManager::~MetadataManager() {
 
 void MetadataManager::_clearAllCleanups(WithLock lock) {
     _clearAllCleanups(
+        lock,
         {ErrorCodes::InterruptedDueToReplStateChange,
          str::stream() << "Range deletions in " << _nss.ns()
-                       << " abandoned because collection was dropped or became unsharded"},
-        lock);
+                       << " abandoned because collection was dropped or became unsharded"});
 }
 
-void MetadataManager::_clearAllCleanups(Status status, WithLock) {
+void MetadataManager::_clearAllCleanups(WithLock, Status status) {
     for (auto& metadata : _metadata) {
         std::ignore = _rangesToClean.add(std::move(metadata->_tracker.orphans));
     }
@@ -148,7 +148,7 @@ void MetadataManager::_clearAllCleanups(Status status, WithLock) {
 ScopedCollectionMetadata MetadataManager::getActiveMetadata(std::shared_ptr<MetadataManager> self) {
     stdx::lock_guard<stdx::mutex> scopedLock(_managerLock);
     if (!_metadata.empty()) {
-        return ScopedCollectionMetadata(std::move(self), _metadata.back(), scopedLock);
+        return ScopedCollectionMetadata(scopedLock, std::move(self), _metadata.back());
     }
     return ScopedCollectionMetadata();
 }
@@ -193,7 +193,7 @@ void MetadataManager::refreshActiveMetadata(std::unique_ptr<CollectionMetadata> 
         invariant(_receivingChunks.empty());
         invariant(_rangesToClean.isEmpty());
 
-        _setActiveMetadata(std::move(remoteMetadata), scopedLock);
+        _setActiveMetadata(scopedLock, std::move(remoteMetadata));
         return;
     }
 
@@ -207,7 +207,7 @@ void MetadataManager::refreshActiveMetadata(std::unique_ptr<CollectionMetadata> 
               << " due to epoch change";
 
         _receivingChunks.clear();
-        _setActiveMetadata(std::move(remoteMetadata), scopedLock);
+        _setActiveMetadata(scopedLock, std::move(remoteMetadata));
         _clearAllCleanups(scopedLock);
         return;
     }
@@ -241,11 +241,11 @@ void MetadataManager::refreshActiveMetadata(std::unique_ptr<CollectionMetadata> 
         it = _receivingChunks.begin();
     }
 
-    _setActiveMetadata(std::move(remoteMetadata), scopedLock);
+    _setActiveMetadata(scopedLock, std::move(remoteMetadata));
 }
 
-void MetadataManager::_setActiveMetadata(std::unique_ptr<CollectionMetadata> newMetadata,
-                                         WithLock lock) {
+void MetadataManager::_setActiveMetadata(WithLock lock,
+                                         std::unique_ptr<CollectionMetadata> newMetadata) {
     invariant(newMetadata);
     _metadata.push_back(std::move(newMetadata));
     _retireExpiredMetadata(lock);
@@ -262,7 +262,7 @@ void MetadataManager::_retireExpiredMetadata(WithLock lock) {
                   << " range(s) finished; scheduling ranges for deletion";
             // It is safe to push orphan ranges from _metadata.back(), even though new queries might
             // start any time, because any request to delete a range it maps is rejected.
-            _pushListToClean(std::move(_metadata.front()->_tracker.orphans), lock);
+            _pushListToClean(lock, std::move(_metadata.front()->_tracker.orphans));
         }
         if (&_metadata.front() == &_metadata.back())
             break;  // do not pop the active chunk mapping!
@@ -271,9 +271,9 @@ void MetadataManager::_retireExpiredMetadata(WithLock lock) {
 
 // ScopedCollectionMetadata members
 
-ScopedCollectionMetadata::ScopedCollectionMetadata(std::shared_ptr<MetadataManager> manager,
-                                                   std::shared_ptr<CollectionMetadata> metadata,
-                                                   WithLock)
+ScopedCollectionMetadata::ScopedCollectionMetadata(WithLock,
+                                                   std::shared_ptr<MetadataManager> manager,
+                                                   std::shared_ptr<CollectionMetadata> metadata)
     : _metadata(std::move(metadata)), _manager(std::move(manager)) {
     invariant(_metadata);
     invariant(_manager);
@@ -417,17 +417,17 @@ void scheduleCleanup(executor::TaskExecutor* executor,
 
 }  // namespace
 
-auto MetadataManager::_pushRangeToClean(ChunkRange const& range, Date_t when, WithLock lock)
+auto MetadataManager::_pushRangeToClean(WithLock lock, ChunkRange const& range, Date_t when)
     -> CleanupNotification {
     std::list<Deletion> ranges;
     auto ownedRange = ChunkRange{range.getMin().getOwned(), range.getMax().getOwned()};
     ranges.emplace_back(Deletion{std::move(ownedRange), when});
     auto& notifn = ranges.back().notification;
-    _pushListToClean(std::move(ranges), lock);
+    _pushListToClean(lock, std::move(ranges));
     return notifn;
 }
 
-void MetadataManager::_pushListToClean(std::list<Deletion> ranges, WithLock) {
+void MetadataManager::_pushListToClean(WithLock, std::list<Deletion> ranges) {
     auto when = _rangesToClean.add(std::move(ranges));
     if (when) {
         auto epoch = _metadata.back()->getCollVersion().epoch();
@@ -436,7 +436,7 @@ void MetadataManager::_pushListToClean(std::list<Deletion> ranges, WithLock) {
     invariant(ranges.empty());
 }
 
-void MetadataManager::_addToReceiving(ChunkRange const& range, WithLock) {
+void MetadataManager::_addToReceiving(WithLock, ChunkRange const& range) {
     _receivingChunks.insert(
         std::make_pair(range.getMin().getOwned(),
                        CachedChunkInfo(range.getMax().getOwned(), ChunkVersion::IGNORED())));
@@ -446,17 +446,17 @@ auto MetadataManager::beginReceive(ChunkRange const& range) -> CleanupNotificati
     stdx::unique_lock<stdx::mutex> scopedLock(_managerLock);
     invariant(!_metadata.empty());
 
-    if (_overlapsInUseChunk(range, scopedLock)) {
+    if (_overlapsInUseChunk(scopedLock, range)) {
         return Status{ErrorCodes::RangeOverlapConflict,
                       "Documents in target range may still be in use on the destination shard."};
     }
-    _addToReceiving(range, scopedLock);
+    _addToReceiving(scopedLock, range);
     log() << "Scheduling deletion of any documents in " << _nss.ns() << " range "
           << redact(range.toString()) << " before migrating in a chunk covering the range";
-    return _pushRangeToClean(range, Date_t{}, scopedLock);
+    return _pushRangeToClean(scopedLock, range, Date_t{});
 }
 
-void MetadataManager::_removeFromReceiving(ChunkRange const& range, WithLock) {
+void MetadataManager::_removeFromReceiving(WithLock, ChunkRange const& range) {
     auto it = _receivingChunks.find(range.getMin());
     invariant(it != _receivingChunks.end());
     _receivingChunks.erase(it);
@@ -471,9 +471,9 @@ void MetadataManager::forgetReceive(ChunkRange const& range) {
     log() << "Abandoning in-migration of " << _nss.ns() << " range " << range
           << "; scheduling deletion of any documents already copied";
 
-    invariant(!_overlapsInUseChunk(range, scopedLock));
-    _removeFromReceiving(range, scopedLock);
-    _pushRangeToClean(range, Date_t{}, scopedLock).abandon();
+    invariant(!_overlapsInUseChunk(scopedLock, range));
+    _removeFromReceiving(scopedLock, range);
+    _pushRangeToClean(scopedLock, range, Date_t{}).abandon();
 }
 
 auto MetadataManager::cleanUpRange(ChunkRange const& range, Date_t whenToDelete)
@@ -494,11 +494,11 @@ auto MetadataManager::cleanUpRange(ChunkRange const& range, Date_t whenToDelete)
     }
 
     StringData whenStr = (whenToDelete == Date_t{}) ? "immediate"_sd : "deferred"_sd;
-    if (!_overlapsInUseChunk(range, scopedLock)) {
+    if (!_overlapsInUseChunk(scopedLock, range)) {
         // No running queries can depend on it, so queue it for deletion immediately.
         log() << "Scheduling " << whenStr << " deletion of " << _nss.ns() << " range "
               << redact(range.toString());
-        return _pushRangeToClean(range, whenToDelete, scopedLock);
+        return _pushRangeToClean(scopedLock, range, whenToDelete);
     }
     auto ownedRange = ChunkRange{range.getMin().getOwned(), range.getMax().getOwned()};
     activeMetadata->_tracker.orphans.emplace_back(Deletion{std::move(ownedRange), whenToDelete});
@@ -519,13 +519,13 @@ auto MetadataManager::overlappingMetadata(std::shared_ptr<MetadataManager> const
     auto it = _metadata.crbegin();  // start with the current active chunk mapping
     if ((*it)->rangeOverlapsChunk(range)) {
         // We ignore the refcount of the active mapping; effectively, we assume it is in use.
-        result.push_back(ScopedCollectionMetadata(self, *it, scopedLock));
+        result.push_back(ScopedCollectionMetadata(scopedLock, self, *it));
     }
     ++it;  // step to snapshots
     for (auto end = _metadata.crend(); it != end; ++it) {
         // We want all the overlapping snapshot mappings still possibly in use by a query.
         if ((*it)->_tracker.usageCounter > 0 && (*it)->rangeOverlapsChunk(range)) {
-            result.push_back(ScopedCollectionMetadata(self, *it, scopedLock));
+            result.push_back(ScopedCollectionMetadata(scopedLock, self, *it));
         }
     }
     return result;
@@ -548,14 +548,14 @@ size_t MetadataManager::numberOfRangesToClean() {
 auto MetadataManager::trackOrphanedDataCleanup(ChunkRange const& range)
     -> boost::optional<CleanupNotification> {
     stdx::unique_lock<stdx::mutex> scopedLock(_managerLock);
-    auto overlaps = _overlapsInUseCleanups(range, scopedLock);
+    auto overlaps = _overlapsInUseCleanups(scopedLock, range);
     if (overlaps) {
         return overlaps;
     }
     return _rangesToClean.overlaps(range);
 }
 
-bool MetadataManager::_overlapsInUseChunk(ChunkRange const& range, WithLock) {
+bool MetadataManager::_overlapsInUseChunk(WithLock, ChunkRange const& range) {
     invariant(!_metadata.empty());
     for (auto it = _metadata.begin(), end = --_metadata.end(); it != end; ++it) {
         if (((*it)->_tracker.usageCounter != 0) && (*it)->rangeOverlapsChunk(range)) {
@@ -568,7 +568,7 @@ bool MetadataManager::_overlapsInUseChunk(ChunkRange const& range, WithLock) {
     return false;
 }
 
-auto MetadataManager::_overlapsInUseCleanups(ChunkRange const& range, WithLock)
+auto MetadataManager::_overlapsInUseCleanups(WithLock, ChunkRange const& range)
     -> boost::optional<CleanupNotification> {
     invariant(!_metadata.empty());
 

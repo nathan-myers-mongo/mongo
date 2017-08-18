@@ -470,15 +470,15 @@ shared_ptr<Notification<RemoteCommandResponse>> MigrationManager::_schedule(
 
     auto retVal = migration.completionNotification;
 
-    _schedule(opCtx, fromHostStatus.getValue(), std::move(migration), lock);
+    _schedule(lock, opCtx, fromHostStatus.getValue(), std::move(migration));
 
     return retVal;
 }
 
-void MigrationManager::_schedule(OperationContext* opCtx,
+void MigrationManager::_schedule(WithLock lock,
+                                 OperationContext* opCtx,
                                  const HostAndPort& targetHost,
-                                 Migration migration,
-                                 WithLock lock) {
+                                 Migration migration) {
     executor::TaskExecutor* const executor =
         Grid::get(opCtx)->getExecutorPool()->getFixedExecutor();
 
@@ -527,7 +527,7 @@ void MigrationManager::_schedule(OperationContext* opCtx,
                 auto opCtx = cc().makeOperationContext();
 
                 stdx::lock_guard<stdx::mutex> lock(_mutex);
-                _complete(opCtx.get(), itMigration, args.response, lock);
+                _complete(lock, opCtx.get(), itMigration, args.response);
             });
 
     if (callbackHandleWithStatus.isOK()) {
@@ -535,13 +535,13 @@ void MigrationManager::_schedule(OperationContext* opCtx,
         return;
     }
 
-    _complete(opCtx, itMigration, std::move(callbackHandleWithStatus.getStatus()), lock);
+    _complete(lock, opCtx, itMigration, std::move(callbackHandleWithStatus.getStatus()));
 }
 
-void MigrationManager::_complete(OperationContext* opCtx,
+void MigrationManager::_complete(WithLock lock,
+                                 OperationContext* opCtx,
                                  MigrationsList::iterator itMigration,
-                                 const RemoteCommandResponse& remoteCommandResponse,
-                                 WithLock lock) {
+                                 const RemoteCommandResponse& remoteCommandResponse) {
     const NamespaceString nss(itMigration->nss);
 
     // Make sure to signal the notification last, after the distributed lock is freed, so that we

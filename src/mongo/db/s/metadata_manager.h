@@ -145,7 +145,7 @@ private:
     /**
      * Cancels all scheduled deletions of orphan ranges, notifying listeners with specified status.
      */
-    void _clearAllCleanups(Status, WithLock);
+    void _clearAllCleanups(WithLock, Status);
 
     /**
      * Cancels all scheduled deletions of orphan ranges, notifying listeners with status
@@ -162,44 +162,44 @@ private:
     /**
      * Pushes current set of chunks, if any, to _metadataInUse, replaces it with newMetadata.
      */
-    void _setActiveMetadata(std::unique_ptr<CollectionMetadata> newMetadata, WithLock);
+    void _setActiveMetadata(WithLock, std::unique_ptr<CollectionMetadata> newMetadata);
 
     /**
      * Returns true if the specified range overlaps any chunk that might be currently in use by a
      * running query.
      */
 
-    bool _overlapsInUseChunk(ChunkRange const& range, WithLock);
+    bool _overlapsInUseChunk(WithLock, ChunkRange const& range);
 
     /**
      * Returns a notification if any range (possibly) still in use, but scheduled for cleanup,
      * overlaps the argument range.
      */
-    auto _overlapsInUseCleanups(ChunkRange const& range, WithLock)
+    auto _overlapsInUseCleanups(WithLock, ChunkRange const& range)
         -> boost::optional<CleanupNotification>;
 
     /**
      * Copies the argument range to the list of ranges scheduled for immediate deletion, and
      * schedules a a background task to perform the work.
      */
-    auto _pushRangeToClean(ChunkRange const& range, Date_t when, WithLock) -> CleanupNotification;
+    auto _pushRangeToClean(WithLock, ChunkRange const& range, Date_t when) -> CleanupNotification;
 
     /**
      * Splices the argument list elements to the list of ranges scheduled for immediate deletion,
      * and schedules a a background task to perform the work.
      */
-    void _pushListToClean(std::list<Deletion> range, WithLock);
+    void _pushListToClean(WithLock, std::list<Deletion> range);
 
     /**
      * Adds a range from the receiving map, so getNextOrphanRange will skip ranges migrating in.
      */
-    void _addToReceiving(ChunkRange const& range, WithLock);
+    void _addToReceiving(WithLock, ChunkRange const& range);
 
     /**
      * Removes a range from the receiving map after a migration failure. The range must
      * exactly match an element of _receivingChunks.
      */
-    void _removeFromReceiving(ChunkRange const& range, WithLock);
+    void _removeFromReceiving(WithLock, ChunkRange const& range);
 
     // data members
 
@@ -288,9 +288,9 @@ private:
      *
      * Must be called with manager->_managerLock held.  Arguments must be non-null.
      */
-    ScopedCollectionMetadata(std::shared_ptr<MetadataManager> manager,
-                             std::shared_ptr<CollectionMetadata> metadata,
-                             WithLock);
+    ScopedCollectionMetadata(WithLock,
+                             std::shared_ptr<MetadataManager> manager,
+                             std::shared_ptr<CollectionMetadata> metadata);
 
     /**
      * Disconnect from the CollectionMetadata, possibly triggering GC of unused CollectionMetadata.

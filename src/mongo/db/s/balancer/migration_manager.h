@@ -195,10 +195,10 @@ private:
      * The distributed lock is acquired before scheduling the first migration for the collection and
      * is only released when all active migrations on the collection have finished.
      */
-    void _schedule(OperationContext* opCtx,
+    void _schedule(WithLock,
+                   OperationContext* opCtx,
                    const HostAndPort& targetHost,
-                   Migration migration,
-                   WithLock);
+                   Migration migration);
 
     /**
      * Used internally for migrations scheduled with the distributed lock acquired by the config
@@ -206,10 +206,10 @@ private:
      * passed iterator and if this is the last migration for the collection will free the collection
      * distributed lock.
      */
-    void _complete(OperationContext* opCtx,
+    void _complete(WithLock,
+                   OperationContext* opCtx,
                    MigrationsList::iterator itMigration,
-                   const executor::RemoteCommandResponse& remoteCommandResponse,
-                   WithLock);
+                   const executor::RemoteCommandResponse& remoteCommandResponse);
 
     /**
      * If the state of the migration manager is kStopping, checks whether there are any outstanding
