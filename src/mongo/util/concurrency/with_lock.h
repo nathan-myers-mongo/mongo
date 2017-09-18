@@ -30,9 +30,18 @@
 #include "mongo/stdx/mutex.h"
 #include "mongo/util/assert_util.h"
 
+#include <type_traits>
 #include <utility>
 
 namespace mongo {
+
+struct WithoutLock {};
+
+/**
+ * Types that properly specialize WithLockable may be implicitly converted to a WithLock.
+ */
+template <typename Lock>
+struct WithLockable;
 
 /**
  * WithLock is an attestation to pass as an argument to functions that must be called only while
@@ -64,19 +73,23 @@ namespace mongo {
  *         _really_clobber(lock, opCtx);
  *     }
  *
+ * Pass WithoutLock() to a function that takes WithLock when a lock is not really needed, such as
+ * in a constructor.
  */
-struct WithLock {
-    template <typename Mutex>
-    WithLock(stdx::lock_guard<Mutex> const&) noexcept {}
 
-    template <typename Mutex>
-    WithLock(stdx::unique_lock<Mutex> const& lock) noexcept {
-        invariant(lock.owns_lock());
+struct WithLock {
+
+    // Construct by conversion from anything WithLockable.
+    template <typename Lock>
+    WithLock(Lock& lock) noexcept {
+        WithLockable<typename std::remove_const<Lock>::type>::check(lock);
     }
 
     // Pass by value is OK.
-    WithLock(WithLock const&) noexcept {}
-    WithLock(WithLock&&) noexcept {}
+    WithLock(WithLock const&) noexcept = default;
+    WithLock(WithLock&&) noexcept = default;
+    // Declaring this keeps the templated constructor above from stealing the match.
+    WithLock(WithLock&) noexcept = default;
 
     WithLock() = delete;
 
@@ -84,12 +97,32 @@ struct WithLock {
     void operator=(WithLock const&) = delete;
     void operator=(WithLock&&) = delete;
 
-    // No moving a lock_guard<> or unique_lock<> in.
-    template <typename Mutex>
-    WithLock(stdx::lock_guard<Mutex>&&) = delete;
-    template <typename Mutex>
-    WithLock(stdx::unique_lock<Mutex>&&) = delete;
+    // Move in WithoutLock, but nothing else.
+    WithLock(WithoutLock&&) noexcept {}
+    template <typename Lock>
+    WithLock(Lock&&) = delete;  // This ctor matches literally anything not listed above.
 };
+
+template <typename T>
+struct WithLockableNoCheck {
+    static void check(T const&) {}
+};
+
+// Can construct a WithLock from a stx::lock_guard<M>
+template <typename Mutex>
+struct WithLockable<stdx::lock_guard<Mutex>> : WithLockableNoCheck<stdx::lock_guard<Mutex>> {};
+
+// Can construct a WithLock from a stx::unique_lock<M>
+template <typename Mutex>
+struct WithLockable<stdx::unique_lock<Mutex>> {
+    static void check(stdx::unique_lock<Mutex> const& lock) noexcept {
+        invariant(lock.owns_lock());
+    }
+};
+
+// Can construct a WithLock from a WithoutLock
+template <>
+struct WithLockable<WithoutLock> : WithLockableNoCheck<WithoutLock> {};
 
 }  // namespace mongo
 
