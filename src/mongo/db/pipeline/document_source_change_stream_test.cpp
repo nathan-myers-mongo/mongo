@@ -227,15 +227,36 @@ TEST_F(ChangeStreamStageTest, TransformInsertFromMigrate) {
 }
 
 TEST_F(ChangeStreamStageTest, TransformUpdateFields) {
-    OplogEntry updateField(
-        optime, 1, OpTypeEnum::kUpdate, nss, BSON("$set" << BSON("y" << 1)), BSON("_id" << 1));
+    BSONObj o = BSON("$set" << BSON("y" << 1));
+    BSONObj o2 = BSON("_id" << 1 << "x" << 2);
+    OplogEntry updateField(optime, 1, OpTypeEnum::kUpdate, nss, o, std::move(o2));
     updateField.setUuid(testUuid());
     // Update fields
     Document expectedUpdateField{
         {DSChangeStream::kIdField, makeResumeToken(ts, testUuid(), 1)},
         {DSChangeStream::kOperationTypeField, DSChangeStream::kUpdateOpType},
         {DSChangeStream::kNamespaceField, D{{"db", nss.db()}, {"coll", nss.coll()}}},
-        {DSChangeStream::kDocumentKeyField, D{{"_id", 1}}},
+        {DSChangeStream::kDocumentKeyField, D{{"_id", 1}, {"x", 2}}},
+        {
+            "updateDescription", D{{"updatedFields", D{{"y", 1}}}, {"removedFields", vector<V>()}},
+        },
+    };
+    checkTransformation(updateField, expectedUpdateField);
+}
+
+// Legacy documents might not have an _id field; then the document key is the full (post-update)
+// document.
+TEST_F(ChangeStreamStageTest, TransformUpdateFieldsLegacyNoId) {
+    BSONObj o = BSON("$set" << BSON("y" << 1));
+    BSONObj o2 = BSON("x" << 1 << "y" << 1);
+    OplogEntry updateField(optime, 1, OpTypeEnum::kUpdate, nss, o, std::move(o2));
+    updateField.setUuid(testUuid());
+    // Update fields
+    Document expectedUpdateField{
+        {DSChangeStream::kIdField, makeResumeToken(ts, testUuid(), 1)},
+        {DSChangeStream::kOperationTypeField, DSChangeStream::kUpdateOpType},
+        {DSChangeStream::kNamespaceField, D{{"db", nss.db()}, {"coll", nss.coll()}}},
+        {DSChangeStream::kDocumentKeyField, D{{"x", 1}, {"y", "1"}}},
         {
             "updateDescription", D{{"updatedFields", D{{"y", 1}}}, {"removedFields", vector<V>()}},
         },
@@ -244,15 +265,16 @@ TEST_F(ChangeStreamStageTest, TransformUpdateFields) {
 }
 
 TEST_F(ChangeStreamStageTest, TransformRemoveFields) {
-    OplogEntry removeField(
-        optime, 1, OpTypeEnum::kUpdate, nss, BSON("$unset" << BSON("y" << 1)), BSON("_id" << 1));
+    BSONObj o = BSON("$unset" << BSON("y" << 1));
+    BSONObj o2 = BSON("_id" << 1 << "x" << 2);
+    OplogEntry removeField(optime, 1, OpTypeEnum::kUpdate, nss, o, std::move(o2));
     removeField.setUuid(testUuid());
     // Remove fields
     Document expectedRemoveField{
         {DSChangeStream::kIdField, makeResumeToken(ts, testUuid(), 1)},
         {DSChangeStream::kOperationTypeField, DSChangeStream::kUpdateOpType},
         {DSChangeStream::kNamespaceField, D{{"db", nss.db()}, {"coll", nss.coll()}}},
-        {DSChangeStream::kDocumentKeyField, D{{"_id", 1}}},
+        {DSChangeStream::kDocumentKeyField, D{{"_id", 1}, {"x", 2}}},
         {
             "updateDescription", D{{"updatedFields", D{}}, {"removedFields", vector<V>{V("y"_sd)}}},
         }};
@@ -260,29 +282,30 @@ TEST_F(ChangeStreamStageTest, TransformRemoveFields) {
 }
 
 TEST_F(ChangeStreamStageTest, TransformReplace) {
-    OplogEntry replace(
-        optime, 1, OpTypeEnum::kUpdate, nss, BSON("_id" << 1 << "y" << 1), BSON("_id" << 1));
+    BSONObj o = BSON("_id" << 1 << "x" << 2 << "y" << 1);
+    BSONObj o2 = BSON("_id" << 1 << "x" << 2);
+    OplogEntry replace(optime, 1, OpTypeEnum::kUpdate, nss, o, std::move(o2));
     replace.setUuid(testUuid());
     // Replace
     Document expectedReplace{
         {DSChangeStream::kIdField, makeResumeToken(ts, testUuid(), 1)},
         {DSChangeStream::kOperationTypeField, DSChangeStream::kReplaceOpType},
-        {DSChangeStream::kFullDocumentField, D{{"_id", 1}, {"y", 1}}},
+        {DSChangeStream::kFullDocumentField, D{{"_id", 1}, {"x", 2}, {"y", 1}}},
         {DSChangeStream::kNamespaceField, D{{"db", nss.db()}, {"coll", nss.coll()}}},
-        {DSChangeStream::kDocumentKeyField, D{{"_id", 1}}},
+        {DSChangeStream::kDocumentKeyField, D{{"_id", 1}, {"x", 2}}},
     };
     checkTransformation(replace, expectedReplace);
 }
 
 TEST_F(ChangeStreamStageTest, TransformDelete) {
-    OplogEntry deleteEntry(optime, 1, OpTypeEnum::kDelete, nss, BSON("_id" << 1));
+    OplogEntry deleteEntry(optime, 1, OpTypeEnum::kDelete, nss, BSON("_id" << 1 << "x" << 2));
     deleteEntry.setUuid(testUuid());
     // Delete
     Document expectedDelete{
         {DSChangeStream::kIdField, makeResumeToken(ts, testUuid(), 1)},
         {DSChangeStream::kOperationTypeField, DSChangeStream::kDeleteOpType},
         {DSChangeStream::kNamespaceField, D{{"db", nss.db()}, {"coll", nss.coll()}}},
-        {DSChangeStream::kDocumentKeyField, D{{"_id", 1}}},
+        {DSChangeStream::kDocumentKeyField, D{{"_id", 1}, {"x", 2}}},
     };
     checkTransformation(deleteEntry, expectedDelete);
     deleteEntry.setFromMigrate(false);  // also check actual "fromMigrate: false" not filtered

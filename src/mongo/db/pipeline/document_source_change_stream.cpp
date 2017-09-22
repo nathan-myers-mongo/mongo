@@ -329,6 +329,7 @@ Document DocumentSourceChangeStream::Transformation::applyTransformation(const D
     StringData operationType;
     Value fullDocument;
     Value updateDescription;
+    Value documentKey;
 
     // Deal with CRUD operations and commands.
     auto opType = repl::OpType_parse(IDLParserErrorContext("ChangeStreamEntry.op"), op);
@@ -340,6 +341,7 @@ Document DocumentSourceChangeStream::Transformation::applyTransformation(const D
         }
         case repl::OpTypeEnum::kDelete: {
             operationType = kDeleteOpType;
+            documentKey = input[repl::OplogEntry::kObjectFieldName];
             break;
         }
         case repl::OpTypeEnum::kUpdate: {
@@ -367,6 +369,7 @@ Document DocumentSourceChangeStream::Transformation::applyTransformation(const D
                 operationType = kReplaceOpType;
                 fullDocument = input[repl::OplogEntry::kObjectFieldName];
             }
+            documentKey = input[repl::OplogEntry::kObject2FieldName];
             break;
         }
         case repl::OpTypeEnum::kCommand: {
@@ -389,8 +392,7 @@ Document DocumentSourceChangeStream::Transformation::applyTransformation(const D
     invariant(operationType == kInvalidateOpType || !uuid.missing());
 
     // Construct the result document.
-    Value documentKey;
-    if (!documentId.missing()) {
+    if (documentKey.missing() & !documentId.missing()) {
         documentKey = Value(Document{{kIdField, documentId}});
     }
     // Note that 'documentKey' might be missing, in which case it will not appear in the output.
