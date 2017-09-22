@@ -256,7 +256,7 @@ TEST_F(ChangeStreamStageTest, TransformUpdateFieldsLegacyNoId) {
         {DSChangeStream::kIdField, makeResumeToken(ts, testUuid(), 1)},
         {DSChangeStream::kOperationTypeField, DSChangeStream::kUpdateOpType},
         {DSChangeStream::kNamespaceField, D{{"db", nss.db()}, {"coll", nss.coll()}}},
-        {DSChangeStream::kDocumentKeyField, D{{"x", 1}, {"y", "1"}}},
+        {DSChangeStream::kDocumentKeyField, D{{"x", 1}, {"y", 1}}},
         {
             "updateDescription", D{{"updatedFields", D{{"y", 1}}}, {"removedFields", vector<V>()}},
         },
