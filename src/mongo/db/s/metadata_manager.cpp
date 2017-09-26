@@ -247,6 +247,10 @@ void MetadataManager::refreshActiveMetadata(std::unique_ptr<CollectionMetadata> 
 void MetadataManager::_setActiveMetadata(WithLock lock,
                                          std::unique_ptr<CollectionMetadata> newMetadata) {
     invariant(newMetadata);
+    if (!_metadata.empty()) {
+        --_metadata.back()->_tracker.usageCounter;
+    }
+    newMetadata->_tracker.usageCounter = 1;
     _metadata.push_back(std::move(newMetadata));
     _retireExpiredMetadata(lock);
 }
@@ -264,8 +268,6 @@ void MetadataManager::_retireExpiredMetadata(WithLock lock) {
             // start any time, because any request to delete a range it maps is rejected.
             _pushListToClean(lock, std::move(_metadata.front()->_tracker.orphans));
         }
-        if (&_metadata.front() == &_metadata.back())
-            break;  // do not pop the active chunk mapping!
     }
 }
 
@@ -518,13 +520,8 @@ auto MetadataManager::overlappingMetadata(std::shared_ptr<MetadataManager> const
     stdx::lock_guard<stdx::mutex> scopedLock(_managerLock);
     std::vector<ScopedCollectionMetadata> result;
     result.reserve(_metadata.size());
-    auto it = _metadata.crbegin();  // start with the current active chunk mapping
-    if ((*it)->rangeOverlapsChunk(range)) {
-        // We ignore the refcount of the active mapping; effectively, we assume it is in use.
-        result.push_back(ScopedCollectionMetadata(scopedLock, self, *it));
-    }
-    ++it;  // step to snapshots
-    for (auto end = _metadata.crend(); it != end; ++it) {
+    // Start with the current active chunk mapping:
+    for (auto it = _metadata.crbegin(), end = _metadata.crend(); it != end; ++it) {
         // We want all the overlapping snapshot mappings still possibly in use by a query.
         if ((*it)->_tracker.usageCounter > 0 && (*it)->rangeOverlapsChunk(range)) {
             result.push_back(ScopedCollectionMetadata(scopedLock, self, *it));
@@ -560,11 +557,7 @@ auto MetadataManager::trackOrphanedDataCleanup(ChunkRange const& range)
 auto MetadataManager::_newestOverlappingMetadata(WithLock, ChunkRange const& range) const
     -> CollectionMetadata* {
 
-    invariant(!_metadata.empty());
-    if (_metadata.back()->rangeOverlapsChunk(range)) {
-        return _metadata.back().get();
-    }
-    for (auto it = ++_metadata.rbegin(), et = _metadata.rend(); it != et; ++it) {
+    for (auto it = _metadata.rbegin(), et = _metadata.rend(); it != et; ++it) {
         if (((*it)->_tracker.usageCounter != 0) && (*it)->rangeOverlapsChunk(range)) {
             return it->get();
         }
