@@ -48,6 +48,8 @@
 #include "mongo/util/log.h"
 #include "mongo/util/time_support.h"
 
+#include <algorithm>
+
 // MetadataManager maintains pointers to CollectionMetadata objects in a member list named
 // _metadata.  Each CollectionMetadata contains an immutable _chunksMap of chunks assigned to this
 // shard, along with details related to its own lifecycle in a member _tracker.
@@ -521,22 +523,20 @@ auto MetadataManager::overlappingMetadata(std::shared_ptr<MetadataManager> const
     std::vector<ScopedCollectionMetadata> result;
     result.reserve(_metadata.size());
     // Start with the current active chunk mapping:
-    for (auto it = _metadata.crbegin(), end = _metadata.crend(); it != end; ++it) {
+    std::for_each(_metadata.crbegin(), _metadata.crend(), [&](auto& p) {
         // We want all the overlapping snapshot mappings still possibly in use by a query.
-        if ((*it)->_tracker.usageCounter > 0 && (*it)->rangeOverlapsChunk(range)) {
-            result.push_back(ScopedCollectionMetadata(scopedLock, self, *it));
+        if (p->_tracker.usageCounter > 0 && p->rangeOverlapsChunk(range)) {
+            result.push_back(ScopedCollectionMetadata(scopedLock, self, p));
         }
-    }
+    });
     return result;
 }
 
 size_t MetadataManager::numberOfRangesToCleanStillInUse() {
     stdx::lock_guard<stdx::mutex> scopedLock(_managerLock);
-    size_t count = 0;
-    for (auto& metadata : _metadata) {
-        count += metadata->_tracker.orphans.size();
-    }
-    return count;
+    return std::accumulate(_metadata.begin(), _metadata.end(), 0u, [](size_t sum, auto& p) {
+        return sum + p->_tracker.orphans.size();
+    });
 }
 
 size_t MetadataManager::numberOfRangesToClean() {
@@ -557,12 +557,10 @@ auto MetadataManager::trackOrphanedDataCleanup(ChunkRange const& range)
 auto MetadataManager::_newestOverlappingMetadata(WithLock, ChunkRange const& range) const
     -> CollectionMetadata* {
 
-    for (auto it = _metadata.rbegin(), et = _metadata.rend(); it != et; ++it) {
-        if (((*it)->_tracker.usageCounter != 0) && (*it)->rangeOverlapsChunk(range)) {
-            return it->get();
-        }
-    }
-    return nullptr;
+    auto it = std::find_if(_metadata.rbegin(), _metadata.rend(), [&range](auto const& p) {
+        return p->_tracker.usageCounter != 0 && p->rangeOverlapsChunk(range);
+    });
+    return it != _metadata.rend() ? it->get() : nullptr;
 }
 
 bool MetadataManager::_overlapsInUseChunk(WithLock lk, ChunkRange const& range) const {
@@ -574,7 +572,7 @@ auto MetadataManager::_overlapsInUseCleanups(WithLock, ChunkRange const& range) 
     -> boost::optional<CleanupNotification> {
     invariant(!_metadata.empty());
 
-    for (auto it = _metadata.crbegin(), et = _metadata.crend(); it != et; ++it) {
+    for (auto it = _metadata.rbegin(), et = _metadata.rend(); it != et; ++it) {
         auto cleanup = (*it)->_tracker.orphans.crbegin();
         auto ec = (*it)->_tracker.orphans.crend();
         for (; cleanup != ec; ++cleanup) {
