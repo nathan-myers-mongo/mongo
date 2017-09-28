@@ -262,7 +262,7 @@ void MetadataManager::_retireExpiredMetadata(WithLock lock) {
     if (_metadata.empty()) {
         return;  // The collection was dropped, or went unsharded, before the query was cleaned up.
     }
-    for (; _metadata.front()->_tracker.usageCounter == 0; _metadata.pop_front()) {
+    for (; _metadata.front()->_tracker.usageCounter == 0; _metadata.erase(_metadata.begin())) {
         // No ScopedCollectionMetadata can see _metadata->front(), other than, maybe, the caller.
         if (!_metadata.front()->_tracker.orphans.empty()) {
             log() << "Queries possibly dependent on " << _nss.ns()

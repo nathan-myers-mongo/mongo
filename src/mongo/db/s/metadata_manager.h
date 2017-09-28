@@ -43,6 +43,8 @@
 #include "mongo/util/concurrency/notification.h"
 #include "mongo/util/concurrency/with_lock.h"
 
+#include <vector>
+
 namespace mongo {
 
 class ScopedCollectionMetadata;
@@ -220,7 +222,7 @@ private:
     // _metadata.back() is the collection metadata reflecting chunks accessible to new queries.
     // The rest are previously active collection metadata instances still in use by active server
     // operations or cursors.
-    std::list<std::shared_ptr<CollectionMetadata>> _metadata;
+    std::vector<std::shared_ptr<CollectionMetadata>> _metadata;
 
     // Chunk ranges being migrated into to the shard. Indexed by the min key of the range.
     RangeMap _receivingChunks;
