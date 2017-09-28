@@ -49,6 +49,7 @@
 #include "mongo/util/time_support.h"
 
 #include <algorithm>
+#include <numeric>
 
 // MetadataManager maintains pointers to CollectionMetadata objects in a member list named
 // _metadata.  Each CollectionMetadata contains an immutable _chunksMap of chunks assigned to this
