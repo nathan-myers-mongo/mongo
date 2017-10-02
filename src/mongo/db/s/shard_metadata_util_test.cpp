@@ -62,8 +62,8 @@ protected:
      */
     ShardCollectionType setUpCollection() {
         BSONObjBuilder builder;
-        builder.append(ShardCollectionType::uuid(), kNss.ns());
         builder.append(ShardCollectionType::ns(), kNss.ns());
+        _uuid.appendToBuilder(&builder, ShardCollectionType::uuid());
         builder.append(ShardCollectionType::epoch(), _maxCollVersion.epoch());
         builder.append(ShardCollectionType::keyPattern(), _keyPattern.toBSON());
         builder.append(ShardCollectionType::defaultCollation(), _defaultCollation);
@@ -72,7 +72,7 @@ protected:
             assertGet(ShardCollectionType::fromBSON(builder.obj()));
 
         ASSERT_OK(updateShardCollectionsEntry(operationContext(),
-                                              BSON(ShardCollectionType::uuid(kNss.ns())),
+                                              BSON(ShardCollectionType::ns(kNss.ns())),
                                               shardCollectionType.toBSON(),
                                               true /*upsert*/));
         return shardCollectionType;
@@ -174,11 +174,11 @@ protected:
         return _defaultCollation;
     }
 
-private:
     ChunkVersion _maxCollVersion{0, 0, OID::gen()};
     const KeyPattern _keyPattern{BSON("a" << 1)};
     const BSONObj _defaultCollation{BSON("locale"
                                          << "fr_CA")};
+    const UUID _uuid = UUID::gen();
 };
 
 TEST_F(ShardMetadataUtilTest, UpdateAndReadCollectionsEntry) {
@@ -186,7 +186,8 @@ TEST_F(ShardMetadataUtilTest, UpdateAndReadCollectionsEntry) {
     ShardCollectionType readShardCollectionType =
         assertGet(readShardCollectionsEntry(operationContext(), kNss));
 
-    ASSERT_EQUALS(updateShardCollectionType.getUUID(), readShardCollectionType.getUUID());
+    ASSERT_TRUE(readShardCollectionType.getUUID());
+    ASSERT_EQUALS(*updateShardCollectionType.getUUID(), *readShardCollectionType.getUUID());
     ASSERT_EQUALS(updateShardCollectionType.getNss(), readShardCollectionType.getNss());
     ASSERT_EQUALS(updateShardCollectionType.getEpoch(), readShardCollectionType.getEpoch());
     ASSERT_BSONOBJ_EQ(updateShardCollectionType.getKeyPattern().toBSON(),
@@ -211,8 +212,8 @@ TEST_F(ShardMetadataUtilTest, PersistedRefreshSignalStartAndFinish) {
     ShardCollectionType shardCollectionsEntry =
         assertGet(readShardCollectionsEntry(operationContext(), kNss));
 
-    ASSERT_EQUALS(shardCollectionsEntry.getUUID(), kNss);
-    ASSERT_EQUALS(shardCollectionsEntry.getNss(), kNss);
+    ASSERT_EQUALS(*shardCollectionsEntry.getUUID(), _uuid);
+    ASSERT_EQUALS(shardCollectionsEntry.getNss(), kNss.ns());
     ASSERT_EQUALS(shardCollectionsEntry.getEpoch(), getCollectionVersion().epoch());
     ASSERT_BSONOBJ_EQ(shardCollectionsEntry.getKeyPattern().toBSON(), getKeyPattern());
     ASSERT_BSONOBJ_EQ(shardCollectionsEntry.getDefaultCollation(), getDefaultCollation());
