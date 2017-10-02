@@ -38,6 +38,7 @@
 #include "mongo/s/chunk_version.h"
 #include "mongo/stdx/memory.h"
 #include "mongo/util/concurrency/notification.h"
+#include "mongo/util/uuid.h"
 
 namespace mongo {
 
@@ -67,13 +68,15 @@ public:
      */
     struct CollectionAndChangedChunks {
         CollectionAndChangedChunks();
-        CollectionAndChangedChunks(const OID& collEpoch,
+        CollectionAndChangedChunks(boost::optional<UUID> uuid,  // TODO: Change to UUID in 3.7
+                                   const OID& collEpoch,
                                    const BSONObj& collShardKeyPattern,
                                    const BSONObj& collDefaultCollation,
                                    bool collShardKeyIsUnique,
                                    std::vector<ChunkType> chunks);
 
         // Information about the entire collection
+        boost::optional<UUID> uuid;  // TODO: Change to UUID in 3.7
         OID epoch;
         BSONObj shardKeyPattern;
         BSONObj defaultCollation;

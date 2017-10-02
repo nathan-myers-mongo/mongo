@@ -48,6 +48,7 @@
 #include "mongo/platform/decimal128.h"
 #include "mongo/stdx/type_traits.h"
 #include "mongo/util/itoa.h"
+#include "mongo/util/uuid.h"
 
 namespace mongo {
 
@@ -642,6 +643,15 @@ public:
      */
     template <class K, class T>
     BSONObjBuilder& append(StringData fieldName, const std::map<K, T>& vals);
+
+    /**
+     * Append a UUID as a BinData(4, ...)
+     */
+
+    BSONObjBuilder& append(StringData fieldName, UUID uuid) {
+        uuid.appendToBuilder(this, fieldName);
+        return *this;
+    }
 
     /**
      * Resets this BSONObjBulder to an empty state. All previously added fields are lost.  If this

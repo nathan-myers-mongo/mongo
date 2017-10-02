@@ -48,10 +48,12 @@ const BSONObj kDefaultCollation = BSON("locale"
 
 TEST(ShardCollectionType, ToFromBSON) {
     const OID epoch = OID::gen();
+    const UUID uuid = UUID::gen();
     const ChunkVersion lastRefreshedCollectionVersion(2, 0, epoch);
 
     BSONObjBuilder builder;
-    builder.append(ShardCollectionType::uuid.name(), kNss.ns());
+    builder.append(ShardCollectionType::id.name(), kNss.ns());
+    builder.append(ShardCollectionType::uuid.name(), uuid);
     builder.append(ShardCollectionType::ns.name(), kNss.ns());
     builder.append(ShardCollectionType::epoch(), epoch);
     builder.append(ShardCollectionType::keyPattern.name(), kKeyPattern);
@@ -64,7 +66,9 @@ TEST(ShardCollectionType, ToFromBSON) {
 
     ShardCollectionType shardCollectionType = assertGet(ShardCollectionType::fromBSON(obj));
 
-    ASSERT_EQUALS(shardCollectionType.getUUID(), kNss);
+    ASSERT_EQUALS(shardCollectionType.getId(), kNss.ns());
+    ASSERT(shardCollectionType.getUUID());  // TODO: not optional<> in 3.7
+    ASSERT_EQUALS(*shardCollectionType.getUUID(), uuid);
     ASSERT_EQUALS(shardCollectionType.getNss(), kNss);
     ASSERT_EQUALS(shardCollectionType.getEpoch(), epoch);
     ASSERT_BSONOBJ_EQ(shardCollectionType.getKeyPattern().toBSON(), kKeyPattern);
@@ -79,9 +83,11 @@ TEST(ShardCollectionType, ToFromBSON) {
 
 TEST(ShardCollectionType, ToFromShardBSONWithoutOptionals) {
     const OID epoch = OID::gen();
+    const UUID uuid = UUID::gen();
 
     BSONObjBuilder builder;
-    builder.append(ShardCollectionType::uuid.name(), kNss.ns());
+    builder.append(ShardCollectionType::id.name(), kNss.ns());
+    // builder.append(ShardCollectionType::uuid.name(), uuid);  TODO: not optional in 3.7
     builder.append(ShardCollectionType::ns.name(), kNss.ns());
     builder.append(ShardCollectionType::epoch(), epoch);
     builder.append(ShardCollectionType::keyPattern.name(), kKeyPattern);
@@ -91,7 +97,8 @@ TEST(ShardCollectionType, ToFromShardBSONWithoutOptionals) {
 
     ShardCollectionType shardCollectionType = assertGet(ShardCollectionType::fromBSON(obj));
 
-    ASSERT_EQUALS(shardCollectionType.getUUID(), kNss);
+    ASSERT_EQUALS(shardCollectionType.getId(), kNss.ns());
+    ASSERT_FALSE(shardCollectionType.getUUID());
     ASSERT_EQUALS(shardCollectionType.getNss(), kNss);
     ASSERT_EQUALS(shardCollectionType.getEpoch(), epoch);
     ASSERT_BSONOBJ_EQ(shardCollectionType.getKeyPattern().toBSON(), kKeyPattern);
@@ -106,38 +113,63 @@ TEST(ShardCollectionType, FromEmptyBSON) {
     ASSERT_FALSE(status.isOK());
 }
 
-TEST(ShardCollectionType, FromBSONNoUUIDFails) {
-    BSONObj obj =
-        BSON(ShardCollectionType::ns(kNss.ns()) << ShardCollectionType::keyPattern(kKeyPattern));
-
-    StatusWith<ShardCollectionType> status = ShardCollectionType::fromBSON(obj);
+TEST(ShardCollectionType, FromBSONNoIdFails) {
+    const UUID uuid = UUID::gen();
+    BSONObjBuilder builder;
+    builder.append(ShardCollectionType::uuid.name(), uuid);
+    builder.append(ShardCollectionType::ns.name(), kNss.ns());
+    builder.append(ShardCollectionType::epoch(), OID::gen());
+    builder.append(ShardCollectionType::keyPattern(), kKeyPattern);
+    builder.append(ShardCollectionType::unique(), true);
+    StatusWith<ShardCollectionType> status = ShardCollectionType::fromBSON(builder.obj());
     ASSERT_EQUALS(status.getStatus().code(), ErrorCodes::NoSuchKey);
-    ASSERT_STRING_CONTAINS(status.getStatus().reason(), ShardCollectionType::uuid());
+    ASSERT_STRING_CONTAINS(status.getStatus().reason(), ShardCollectionType::id());
+}
+
+TEST(ShardCollectionType, FromBSONNoUUIDIsOK) {  // TODO: make not optional in 3.7
+    BSONObjBuilder builder;
+    builder.append(ShardCollectionType::id.name(), kNss.ns());
+    builder.append(ShardCollectionType::ns.name(), kNss.ns());
+    builder.append(ShardCollectionType::epoch(), OID::gen());
+    builder.append(ShardCollectionType::keyPattern(), kKeyPattern);
+    builder.append(ShardCollectionType::unique(), true);
+    assertGet(ShardCollectionType::fromBSON(builder.obj()));
 }
 
 TEST(ShardCollectionType, FromBSONNoNSFails) {
-    BSONObj obj =
-        BSON(ShardCollectionType::uuid(kNss.ns()) << ShardCollectionType::keyPattern(kKeyPattern));
-
-    StatusWith<ShardCollectionType> status = ShardCollectionType::fromBSON(obj);
+    const UUID uuid = UUID::gen();
+    BSONObjBuilder builder;
+    builder.append(ShardCollectionType::id.name(), kNss.ns());
+    builder.append(ShardCollectionType::uuid.name(), uuid);
+    builder.append(ShardCollectionType::epoch(), OID::gen());
+    builder.append(ShardCollectionType::keyPattern(), kKeyPattern);
+    builder.append(ShardCollectionType::unique(), true);
+    StatusWith<ShardCollectionType> status = ShardCollectionType::fromBSON(builder.obj());
     ASSERT_EQUALS(status.getStatus().code(), ErrorCodes::NoSuchKey);
     ASSERT_STRING_CONTAINS(status.getStatus().reason(), ShardCollectionType::ns());
 }
 
 TEST(ShardCollectionType, FromBSONNoEpochFails) {
-    BSONObj obj = BSON(ShardCollectionType::uuid(kNss.ns()) << ShardCollectionType::ns(kNss.ns()));
-
-    StatusWith<ShardCollectionType> status = ShardCollectionType::fromBSON(obj);
+    const UUID uuid = UUID::gen();
+    BSONObjBuilder builder;
+    builder.append(ShardCollectionType::id.name(), kNss.ns());
+    builder.append(ShardCollectionType::uuid.name(), uuid);
+    builder.append(ShardCollectionType::ns.name(), kNss.ns());
+    builder.append(ShardCollectionType::keyPattern(), kKeyPattern);
+    builder.append(ShardCollectionType::unique(), true);
+    StatusWith<ShardCollectionType> status = ShardCollectionType::fromBSON(builder.obj());
     ASSERT_EQUALS(status.getStatus().code(), ErrorCodes::NoSuchKey);
     ASSERT_STRING_CONTAINS(status.getStatus().reason(), ShardCollectionType::epoch());
 }
 
 TEST(ShardCollectionType, FromBSONNoShardKeyFails) {
+    const UUID uuid = UUID::gen();
     BSONObjBuilder builder;
-    builder.append(ShardCollectionType::uuid.name(), kNss.ns());
+    builder.append(ShardCollectionType::id.name(), kNss.ns());
+    builder.append(ShardCollectionType::uuid.name(), uuid);
     builder.append(ShardCollectionType::ns.name(), kNss.ns());
     builder.append(ShardCollectionType::epoch(), OID::gen());
-
+    builder.append(ShardCollectionType::unique(), true);
     StatusWith<ShardCollectionType> status = ShardCollectionType::fromBSON(builder.obj());
     ASSERT_EQUALS(status.getStatus().code(), ErrorCodes::NoSuchKey);
     ASSERT_STRING_CONTAINS(status.getStatus().reason(), ShardCollectionType::keyPattern());
@@ -145,12 +177,12 @@ TEST(ShardCollectionType, FromBSONNoShardKeyFails) {
 
 TEST(ShardCollectionType, FromBSONNoUniqueFails) {
     BSONObjBuilder builder;
-    builder.append(ShardCollectionType::uuid.name(), kNss.ns());
+    builder.append(ShardCollectionType::id.name(), kNss.ns());
+    builder.append(ShardCollectionType::uuid.name(), UUID::gen());
     builder.append(ShardCollectionType::ns.name(), kNss.ns());
     builder.append(ShardCollectionType::epoch(), OID::gen());
     builder.append(ShardCollectionType::keyPattern.name(), kKeyPattern);
     builder.append(ShardCollectionType::defaultCollation(), kDefaultCollation);
-
     StatusWith<ShardCollectionType> status = ShardCollectionType::fromBSON(builder.obj());
     ASSERT_EQUALS(status.getStatus().code(), ErrorCodes::NoSuchKey);
     ASSERT_STRING_CONTAINS(status.getStatus().reason(), ShardCollectionType::unique());
@@ -158,7 +190,8 @@ TEST(ShardCollectionType, FromBSONNoUniqueFails) {
 
 TEST(ShardCollectionType, FromBSONNoDefaultCollationIsOK) {
     BSONObjBuilder builder;
-    builder.append(ShardCollectionType::uuid.name(), kNss.ns());
+    builder.append(ShardCollectionType::id.name(), kNss.ns());
+    builder.append(ShardCollectionType::uuid.name(), UUID::gen());
     builder.append(ShardCollectionType::ns.name(), kNss.ns());
     builder.append(ShardCollectionType::epoch(), OID::gen());
     builder.append(ShardCollectionType::keyPattern.name(), kKeyPattern);

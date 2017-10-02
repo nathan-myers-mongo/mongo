@@ -35,6 +35,7 @@
 #include "mongo/db/keypattern.h"
 #include "mongo/db/namespace_string.h"
 #include "mongo/s/chunk_version.h"
+#include "mongo/util/uuid.h"
 
 namespace mongo {
 
@@ -70,7 +71,8 @@ public:
     // Name of the collections collection on the shard server.
     static const std::string ConfigNS;
 
-    static const BSONField<std::string> uuid;
+    static const BSONField<std::string> id;
+    static const BSONField<UUID> uuid;
     static const BSONField<std::string> ns;
     static const BSONField<OID> epoch;
     static const BSONField<BSONObj> keyPattern;
@@ -79,12 +81,13 @@ public:
     static const BSONField<bool> refreshing;
     static const BSONField<Date_t> lastRefreshedCollectionVersion;
 
-    explicit ShardCollectionType(const NamespaceString& uuid,
-                                 const NamespaceString& nss,
-                                 const OID& epoch,
-                                 const KeyPattern& keyPattern,
-                                 const BSONObj& defaultCollation,
-                                 const bool& unique);
+    ShardCollectionType(std::string id,
+                        boost::optional<UUID> uuid,  // TODO: change to UUID for 3.7
+                        NamespaceString nss,
+                        OID epoch,
+                        const KeyPattern& keyPattern,
+                        const BSONObj& defaultCollation,
+                        bool unique);
 
     /**
      * Constructs a new ShardCollectionType object from BSON. Also does validation of the contents.
@@ -101,27 +104,32 @@ public:
      */
     std::string toString() const;
 
-    const NamespaceString& getUUID() const {
+    const std::string& getId() const& {
+        return _id;
+    }
+    void setId(std::string id);
+
+    const boost::optional<UUID> getUUID() const& {  // TODO: Change to UUID for 3.7
         return _uuid;
     }
-    void setUUID(const NamespaceString& uuid);
+    void setUUID(UUID uuid);
 
-    const NamespaceString& getNss() const {
+    const NamespaceString& getNss() const& {
         return _nss;
     }
-    void setNss(const NamespaceString& nss);
+    void setNss(NamespaceString nss);
 
-    const OID& getEpoch() const {
+    const OID& getEpoch() const& {
         return _epoch;
     }
-    void setEpoch(const OID& epoch);
+    void setEpoch(OID epoch);
 
-    const KeyPattern& getKeyPattern() const {
+    const KeyPattern& getKeyPattern() const& {
         return _keyPattern;
     }
     void setKeyPattern(const KeyPattern& keyPattern);
 
-    const BSONObj& getDefaultCollation() const {
+    const BSONObj& getDefaultCollation() const& {
         return _defaultCollation;
     }
     void setDefaultCollation(const BSONObj& collation) {
@@ -152,8 +160,11 @@ public:
     }
 
 private:
-    // Will become the UUID when available. Currently a duplicate of '_nss'.
-    NamespaceString _uuid;
+    // The record "_id" of the collection; for now, equal to _nss.
+    std::string _id;
+
+    // The UUID of the collection.
+    boost::optional<UUID> _uuid;  // TODO: Change to UUID for 3.7
 
     // The full namespace (with the database prefix).
     NamespaceString _nss;
