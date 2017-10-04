@@ -468,32 +468,31 @@ Status UpdateDriver::update(StringData matchedField,
             }
         }
 
-        for (auto path = immutablePaths.begin(); path != immutablePaths.end(); ++path) {
+        for (auto& path : immutablePaths) {
 
-            if (!updatedPaths.findConflicts(*path, nullptr)) {
+            if (!updatedPaths.findConflicts(path, nullptr)) {
                 continue;
             }
 
             // Find the updated field in the updated document.
             auto newElem = doc->root();
-            for (size_t i = 0; i < (*path)->numParts(); ++i) {
-                newElem = newElem[(*path)->getPart(i)];
+            for (size_t i = 0; i < path->numParts(); ++i) {
+                newElem = newElem[path->getPart(i)];
                 if (!newElem.ok()) {
                     break;
                 }
                 uassert(ErrorCodes::NotSingleValueField,
                         str::stream()
                             << "After applying the update to the document, the (immutable) field '"
-                            << (*path)->dottedField()
+                            << path->dottedField()
                             << "' was found to be an array or array descendant.",
                         newElem.getType() != BSONType::Array);
             }
 
-            auto oldElem =
-                dotted_path_support::extractElementAtPath(original, (*path)->dottedField());
+            auto oldElem = dotted_path_support::extractElementAtPath(original, path->dottedField());
 
             uassert(ErrorCodes::ImmutableField,
-                    str::stream() << "After applying the update, the '" << (*path)->dottedField()
+                    str::stream() << "After applying the update, the '" << path->dottedField()
                                   << "' (required and immutable) field was "
                                      "found to have been removed --"
                                   << original,
@@ -501,7 +500,7 @@ Status UpdateDriver::update(StringData matchedField,
             if (newElem.ok() && oldElem.ok()) {
                 uassert(ErrorCodes::ImmutableField,
                         str::stream() << "After applying the update, the (immutable) field '"
-                                      << (*path)->dottedField()
+                                      << path->dottedField()
                                       << "' was found to have been altered to "
                                       << newElem.toString(),
                         newElem.compareWithBSONElement(oldElem, nullptr, false) == 0);

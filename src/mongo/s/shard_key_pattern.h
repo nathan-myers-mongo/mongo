@@ -93,7 +93,7 @@ public:
 
     const KeyPattern& getKeyPattern() const;
 
-    const std::vector<std::unique_ptr<FieldRef>>& getKeyPatternFields() const;
+    const std::vector<FieldRef>& getKeyPatternFields() const;
 
     const BSONObj& toBSON() const;
 
@@ -234,7 +234,7 @@ public:
 
 private:
     // Ordered, parsed paths
-    std::vector<std::unique_ptr<FieldRef>> _keyPatternPaths;
+    std::vector<FieldRef> _keyPatternPaths;
 
     KeyPattern _keyPattern;
 

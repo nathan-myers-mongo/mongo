@@ -59,7 +59,7 @@ bool FieldRefSet::FieldRefPtrLessThan::operator()(const FieldRef* l, const Field
 
 FieldRefSet::FieldRefSet() {}
 
-FieldRefSet::FieldRefSet(const vector<FieldRef*>& paths) {
+FieldRefSet::FieldRefSet(const vector<FieldRef>& paths) {
     fillFrom(paths);
 }
 
@@ -99,9 +99,11 @@ void FieldRefSet::keepShortest(const FieldRef* toInsert) {
     }
 }
 
-void FieldRefSet::fillFrom(const std::vector<FieldRef*>& fields) {
+void FieldRefSet::fillFrom(const std::vector<FieldRef>& fields) {
     dassert(_fieldSet.empty());
-    _fieldSet.insert(fields.begin(), fields.end());
+    for (auto& field : fields) {
+        _fieldSet.insert(&field);
+    }
 }
 
 bool FieldRefSet::insert(const FieldRef* toInsert, const FieldRef** conflict) {

@@ -500,47 +500,47 @@ TEST_F(CreateFromQuery, ImmutableFieldsOp) {
 
 TEST_F(CreateFromQuery, ShardKeyRepl) {
     BSONObj query = fromjson("{a:{$eq:1}}, b:2}");
-    OwnedPointerVector<FieldRef> immutablePathsVector;
-    immutablePathsVector.push_back(new FieldRef("a"));
-    immutablePathsVector.push_back(new FieldRef("_id"));
+    std::vector<FieldRef> immutablePathsVector;
+    immutablePathsVector.emplace_back("a");
+    immutablePathsVector.emplace_back("_id");
     FieldRefSet immutablePaths;
-    immutablePaths.fillFrom(immutablePathsVector.vector());
+    immutablePaths.fillFrom(immutablePathsVector);
     ASSERT_OK(driverRepl().populateDocumentWithQueryFields(opCtx(), query, immutablePaths, doc()));
     assertSameFields(fromjson("{a:1}"), doc().getObject());
 }
 
 TEST_F(CreateFromQuery, NestedShardKeyRepl) {
     BSONObj query = fromjson("{a:{$eq:1},'b.c':2},d:2}");
-    OwnedPointerVector<FieldRef> immutablePathsVector;
-    immutablePathsVector.push_back(new FieldRef("a"));
-    immutablePathsVector.push_back(new FieldRef("b.c"));
-    immutablePathsVector.push_back(new FieldRef("_id"));
+    std::vector<FieldRef> immutablePathsVector;
+    immutablePathsVector.emplace_back("a");
+    immutablePathsVector.emplace_back("b.c");
+    immutablePathsVector.emplace_back("_id");
     FieldRefSet immutablePaths;
-    immutablePaths.fillFrom(immutablePathsVector.vector());
+    immutablePaths.fillFrom(immutablePathsVector);
     ASSERT_OK(driverRepl().populateDocumentWithQueryFields(opCtx(), query, immutablePaths, doc()));
     assertSameFields(fromjson("{a:1,b:{c:2}}"), doc().getObject());
 }
 
 TEST_F(CreateFromQuery, NestedShardKeyOp) {
     BSONObj query = fromjson("{a:{$eq:1},'b.c':2,d:{$all:[3]}},e:2}");
-    OwnedPointerVector<FieldRef> immutablePathsVector;
-    immutablePathsVector.push_back(new FieldRef("a"));
-    immutablePathsVector.push_back(new FieldRef("b.c"));
-    immutablePathsVector.push_back(new FieldRef("_id"));
+    std::vector<FieldRef> immutablePathsVector;
+    immutablePathsVector.emplace_back("a");
+    immutablePathsVector.emplace_back("b.c");
+    immutablePathsVector.emplace_back("_id");
     FieldRefSet immutablePaths;
-    immutablePaths.fillFrom(immutablePathsVector.vector());
+    immutablePaths.fillFrom(immutablePathsVector);
     ASSERT_OK(driverOps().populateDocumentWithQueryFields(opCtx(), query, immutablePaths, doc()));
     assertSameFields(fromjson("{a:1,b:{c:2},d:3}"), doc().getObject());
 }
 
 TEST_F(CreateFromQuery, NotFullShardKeyRepl) {
     BSONObj query = fromjson("{a:{$eq:1}, 'b.c':2}, d:2}");
-    OwnedPointerVector<FieldRef> immutablePathsVector;
-    immutablePathsVector.push_back(new FieldRef("a"));
-    immutablePathsVector.push_back(new FieldRef("b"));
-    immutablePathsVector.push_back(new FieldRef("_id"));
+    std::vector<FieldRef> immutablePathsVector;
+    immutablePathsVector.emplace_back("a");
+    immutablePathsVector.emplace_back("b");
+    immutablePathsVector.emplace_back("_id");
     FieldRefSet immutablePaths;
-    immutablePaths.fillFrom(immutablePathsVector.vector());
+    immutablePaths.fillFrom(immutablePathsVector);
     ASSERT_NOT_OK(
         driverRepl().populateDocumentWithQueryFields(opCtx(), query, immutablePaths, doc()));
 }

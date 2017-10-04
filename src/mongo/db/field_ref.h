@@ -56,6 +56,8 @@ public:
 
     explicit FieldRef(StringData path);
 
+    FieldRef(FieldRef&& ref) : FieldRef(ref._dotted) {}
+
     /**
      * Field parts accessed through getPart() calls no longer would be valid, after the
      * destructor ran.

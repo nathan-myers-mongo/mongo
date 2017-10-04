@@ -39,14 +39,14 @@
 namespace mongo {
 
 /**
- * A FieldRefSet holds a number of unique FieldRefs - a set of dotted paths into a document.
+ * A FieldRefSet holds pointers to unique FieldRefs - a set of dotted paths into a document.
  *
  * The FieldRefSet provides helpful functions for efficiently finding conflicts between field
  * ref paths - field ref paths conflict if they are equal to each other or if one is a prefix.
  * To maintain a FieldRefSet of non-conflicting paths, always use the insert method which
  * returns conflicting FieldRefs.
  *
- * FieldRefSets do not own the FieldRef paths they contain.
+ * FieldRefSets do not own the FieldRef paths they point at.
  */
 class FieldRefSet {
     MONGO_DISALLOW_COPYING(FieldRefSet);
@@ -63,7 +63,7 @@ public:
 
     FieldRefSet();
 
-    FieldRefSet(const std::vector<FieldRef*>& paths);
+    FieldRefSet(const std::vector<FieldRef>& paths);
 
     /** Returns 'true' if the set is empty */
     bool empty() const {
@@ -99,11 +99,11 @@ public:
     bool insert(const FieldRef* toInsert, const FieldRef** conflict);
 
     /**
-     * Fills the set with the supplied FieldRef*s
+     * Fills the set with the addresses of the supplied FieldRef objects.
      *
      * Note that *no* conflict resolution occurs here.
      */
-    void fillFrom(const std::vector<FieldRef*>& fields);
+    void fillFrom(const std::vector<FieldRef>& fields);
 
     /**
      * Replace any existing conflicting FieldRef with the shortest (closest to root) one

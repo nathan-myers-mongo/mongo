@@ -141,7 +141,7 @@ public:
         return _cm->getShardKeyPattern().toBSON();
     }
 
-    const std::vector<std::unique_ptr<FieldRef>>& getKeyPatternFields() const {
+    const std::vector<FieldRef>& getKeyPatternFields() const {
         return _cm->getShardKeyPattern().getKeyPatternFields();
     }
 

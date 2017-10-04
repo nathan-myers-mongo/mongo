@@ -133,11 +133,11 @@ bool shouldRestartUpdateIfNoLongerMatches(const UpdateStageParams& params) {
     return params.request->shouldReturnAnyDocs() && !params.request->getSort().isEmpty();
 };
 
-const std::vector<std::unique_ptr<FieldRef>>* getImmutableFields(OperationContext* opCtx,
-                                                                 const NamespaceString& ns) {
+const std::vector<FieldRef>* getImmutableFields(OperationContext* opCtx,
+                                                const NamespaceString& ns) {
     auto metadata = CollectionShardingState::get(opCtx, ns)->getMetadata();
     if (metadata) {
-        const std::vector<std::unique_ptr<FieldRef>>& fields = metadata->getKeyPatternFields();
+        const std::vector<FieldRef>& fields = metadata->getKeyPatternFields();
         // Return shard-keys as immutable for the update system.
         return &fields;
     }
@@ -211,11 +211,10 @@ BSONObj UpdateStage::transformAndUpdate(const Snapshotted<BSONObj>& oldObj, Reco
     FieldRefSet immutablePaths;
     if (getOpCtx()->writesAreReplicated() && !request->isFromMigration()) {
         if (lifecycle) {
-            auto immutablePathsVector =
+            auto* immutablePathsVector =
                 getImmutableFields(getOpCtx(), request->getNamespaceString());
             if (immutablePathsVector) {
-                immutablePaths.fillFrom(
-                    transitional_tools_do_not_use::unspool_vector(*immutablePathsVector));
+                immutablePaths.fillFrom(*immutablePathsVector);
             }
         }
         immutablePaths.keepShortest(&idFieldRef);
@@ -387,8 +386,7 @@ BSONObj UpdateStage::applyUpdateOpsForInsert(OperationContext* opCtx,
     if (!isInternalRequest) {
         auto immutablePathsVector = getImmutableFields(opCtx, ns);
         if (immutablePathsVector) {
-            immutablePaths.fillFrom(
-                transitional_tools_do_not_use::unspool_vector(*immutablePathsVector));
+            immutablePaths.fillFrom(*immutablePathsVector);
         }
     }
     immutablePaths.keepShortest(&idFieldRef);
