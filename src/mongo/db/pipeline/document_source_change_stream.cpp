@@ -45,6 +45,9 @@
 #include "mongo/db/repl/oplog_entry.h"
 #include "mongo/db/repl/oplog_entry_gen.h"
 #include "mongo/db/repl/replication_coordinator.h"
+#include "mongo/db/s/collection_sharding_state.h"
+#include "mongo/db/s/collection_metadata.h"
+#include "mongo/db/s/metadata_manager.h"
 #include "mongo/util/log.h"
 
 namespace mongo {
@@ -253,9 +256,7 @@ list<intrusive_ptr<DocumentSource>> DocumentSourceChangeStream::createFromBson(
             << ".",
         serverGlobalParams.featureCompatibility.version.load() !=
             ServerGlobalParams::FeatureCompatibility::Version::k34);
-    // TODO: Add sharding support here (SERVER-29141).
-    uassert(
-        40470, "The $changeStream stage is not supported on sharded systems.", !expCtx->inMongos);
+
     uassert(40471,
             "Only default collation is allowed when using a $changeStream stage.",
             !expCtx->getCollator());
@@ -303,6 +304,7 @@ list<intrusive_ptr<DocumentSource>> DocumentSourceChangeStream::createFromBson(
     auto oplogMatch = DocumentSourceOplogMatch::create(
         buildMatchFilter(expCtx->ns, startFrom, changeStreamIsResuming), expCtx);
     auto transformation = createTransformationStage(elem.embeddedObject(), expCtx);
+
     list<intrusive_ptr<DocumentSource>> stages = {oplogMatch, transformation};
     if (resumeStage) {
         stages.push_back(resumeStage);
@@ -317,9 +319,31 @@ list<intrusive_ptr<DocumentSource>> DocumentSourceChangeStream::createFromBson(
 
 intrusive_ptr<DocumentSource> DocumentSourceChangeStream::createTransformationStage(
     BSONObj changeStreamSpec, const intrusive_ptr<ExpressionContext>& expCtx) {
-    return intrusive_ptr<DocumentSource>(new DocumentSourceSingleDocumentTransformation(
-        expCtx, stdx::make_unique<Transformation>(changeStreamSpec), kStageName.toString()));
+    OperationContext* opCtx = expCtx->opCtx;
+    invariant(opCtx != nullptr);
+    invariant(opCtx->lockState()->isCollectionLockedForMode(expCtx->ns, MODE_IS));
+    auto xform = stdx::make_unique<Transformation>(
+        changeStreamSpec, CollectionShardingState::get(opCtx, expCtx->ns)->getMetadata());
+    return {new DocumentSourceSingleDocumentTransformation(expCtx, xform(), kStageName.toString())};
 }
+
+Transformation::Transformation(BSONObj spec, ScopedCollectionMetadata scm)
+  : _changeStreamSpec(spec),
+    _shardKeyPattern(scm ? scm->shardKeyPattern().toBSON() : BSON()),
+    _uuid(scm ? *scm->uuid : UUID()) {
+
+    invariant(_
+}
+
+namespace {
+Value extractKeyDocFromDoc(ShardKeyPattern const& pattern, const Document& doc) {
+    MutableDocument result;
+    for (auto& field : pattern.getKeyPatternFields()) {
+        result.addField(field->dottedField(), doc.getNestedField(field->dottedField()));
+    }
+    return result.freezeToValue();
+}
+}  // namespace
 
 Document DocumentSourceChangeStream::Transformation::applyTransformation(const Document& input) {
     MutableDocument doc;
@@ -349,19 +373,27 @@ Document DocumentSourceChangeStream::Transformation::applyTransformation(const D
     switch (opType) {
         case repl::OpTypeEnum::kInsert: {
             operationType = kInsertOpType;
-            fullDocument = input[repl::OplogEntry::kObjectFieldName];
-            documentKey = Value(Document{{kIdField, id}});
+            fullDocument = input[repl::OplogEntry::kObjectFieldName];  // "o"
+            if (_shardKeyPattern.isValid()) {
+                invariant(_uuid);  // TODO: Remove in 3.7 when sm->uuid is not optional<UUID>.
+                uassert(88888, "Old change stream encountered insert into new collection"
+                    _uuid == input.getNestedField("ui").getUUID());
+                documentKey = extractKeyDocFromDoc(_shardKeyPattern, fullDocument.getDocument());
+            } else {
+                // TODO: should be checking UUID here, too.
+                documentKey = Value(Document{{kIdField, id}});
+            }
             break;
         }
         case repl::OpTypeEnum::kDelete: {
             operationType = kDeleteOpType;
-            documentKey = input[repl::OplogEntry::kObjectFieldName];
+            documentKey = input[repl::OplogEntry::kObjectFieldName];  // "o"
             break;
         }
         case repl::OpTypeEnum::kUpdate: {
             if (id.missing()) {
                 operationType = kUpdateOpType;
-                checkValueType(input[repl::OplogEntry::kObjectFieldName],
+                checkValueType(input[repl::OplogEntry::kObjectFieldName],  // "o"
                                repl::OplogEntry::kObjectFieldName,
                                BSONType::Object);
                 Document opObject = input[repl::OplogEntry::kObjectFieldName].getDocument();
@@ -383,7 +415,7 @@ Document DocumentSourceChangeStream::Transformation::applyTransformation(const D
                 operationType = kReplaceOpType;
                 fullDocument = input[repl::OplogEntry::kObjectFieldName];
             }
-            documentKey = input[repl::OplogEntry::kObject2FieldName];
+            documentKey = input[repl::OplogEntry::kObject2FieldName];  // "o2"
             break;
         }
         case repl::OpTypeEnum::kCommand: {

@@ -32,6 +32,10 @@
 #include "mongo/db/pipeline/document_source_match.h"
 #include "mongo/db/pipeline/document_source_single_document_transformation.h"
 #include "mongo/db/pipeline/document_sources_gen.h"
+#include "mongo/db/s/collection_sharding_state.h"
+#include "mongo/db/s/collection_metadata.h"
+#include "mongo/db/s/metadata_manager.h"
+#include "mongo/s/shard_key_pattern.h"
 
 namespace mongo {
 
@@ -71,8 +75,9 @@ public:
 
     class Transformation : public DocumentSourceSingleDocumentTransformation::TransformerInterface {
     public:
-        Transformation(BSONObj changeStreamSpec) : _changeStreamSpec(changeStreamSpec.getOwned()) {}
+        Transformation(BSONObj changeStreamSpec, ScopedCollectionMetadata);
         ~Transformation() = default;
+
         Document applyTransformation(const Document& input) final;
         TransformerType getType() const final {
             return TransformerType::kChangeStreamTransformation;
@@ -85,6 +90,12 @@ public:
 
     private:
         BSONObj _changeStreamSpec;
+
+        // The shard key, if sharded, or BSONObj().
+        ShardKeyPattern _shardKeyPattern;
+
+        // The collection UUID.
+        UUID uuid;
     };
 
     // The name of the field where the document key (_id and shard key, if present) will be found
