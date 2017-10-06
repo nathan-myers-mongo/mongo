@@ -95,7 +95,7 @@ public:
         ShardKeyPattern _shardKeyPattern;
 
         // The collection UUID.
-        UUID uuid;
+        const UUID _uuid;
     };
 
     // The name of the field where the document key (_id and shard key, if present) will be found

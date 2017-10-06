@@ -321,19 +321,20 @@ intrusive_ptr<DocumentSource> DocumentSourceChangeStream::createTransformationSt
     BSONObj changeStreamSpec, const intrusive_ptr<ExpressionContext>& expCtx) {
     OperationContext* opCtx = expCtx->opCtx;
     invariant(opCtx != nullptr);
-    invariant(opCtx->lockState()->isCollectionLockedForMode(expCtx->ns, MODE_IS));
-    auto xform = stdx::make_unique<Transformation>(
-        changeStreamSpec, CollectionShardingState::get(opCtx, expCtx->ns)->getMetadata());
-    return {new DocumentSourceSingleDocumentTransformation(expCtx, xform(), kStageName.toString())};
+    // invariant(opCtx->lockState()->isCollectionLockedForMode(expCtx->ns.ns(), MODE_IS));
+    return {new DocumentSourceSingleDocumentTransformation(
+            expCtx,
+            stdx::make_unique<Transformation>(
+                changeStreamSpec,
+                CollectionShardingState::get(opCtx, expCtx->ns.ns())->getMetadata()),
+            kStageName.toString())};
 }
 
-Transformation::Transformation(BSONObj spec, ScopedCollectionMetadata scm)
+DocumentSourceChangeStream::Transformation::Transformation(BSONObj spec,
+                                                           ScopedCollectionMetadata scm)
   : _changeStreamSpec(spec),
-    _shardKeyPattern(scm ? scm->shardKeyPattern().toBSON() : BSON()),
-    _uuid(scm ? *scm->uuid : UUID()) {
-
-    invariant(_
-}
+    _shardKeyPattern(scm ? scm->getKeyPattern() : BSONObj()),
+    _uuid(scm ? *scm->uuid : UUID()) {}
 
 namespace {
 Value extractKeyDocFromDoc(ShardKeyPattern const& pattern, const Document& doc) {
@@ -375,9 +376,8 @@ Document DocumentSourceChangeStream::Transformation::applyTransformation(const D
             operationType = kInsertOpType;
             fullDocument = input[repl::OplogEntry::kObjectFieldName];  // "o"
             if (_shardKeyPattern.isValid()) {
-                invariant(_uuid);  // TODO: Remove in 3.7 when sm->uuid is not optional<UUID>.
-                uassert(88888, "Old change stream encountered insert into new collection"
-                    _uuid == input.getNestedField("ui").getUUID());
+                uassert(88888, "Old change stream encountered insert into new collection",
+                    _uuid == uuid.getUuid());
                 documentKey = extractKeyDocFromDoc(_shardKeyPattern, fullDocument.getDocument());
             } else {
                 // TODO: should be checking UUID here, too.
