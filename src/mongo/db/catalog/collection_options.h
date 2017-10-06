@@ -85,7 +85,7 @@ struct CollectionOptions {
     // ----
 
     // Collection UUID. Will exist if featureCompatibilityVersion >= 3.6.
-    OptionalCollectionUUID uuid;
+    OptionalCollectionUUID uuid;  // TODO: change to UUID in 3.7
 
     bool capped = false;
     long long cappedSize = 0;

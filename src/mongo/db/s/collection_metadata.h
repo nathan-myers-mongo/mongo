@@ -172,6 +172,8 @@ public:
         return _cm;
     }
 
+    const boost::optional<UUID> uuid;  // TODO: change to UUID in 3.7
+
 private:
     struct Tracker {
         uint32_t usageCounter{0};

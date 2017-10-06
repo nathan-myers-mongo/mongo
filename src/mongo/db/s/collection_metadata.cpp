@@ -42,7 +42,8 @@
 namespace mongo {
 
 CollectionMetadata::CollectionMetadata(std::shared_ptr<ChunkManager> cm, const ShardId& thisShardId)
-    : _cm(cm),
+    : uuid(cm->uuid),
+      _cm(cm),
       _thisShardId(thisShardId),
       _shardVersion(_cm->getVersion(thisShardId)),
       _chunksMap(SimpleBSONObjComparator::kInstance.makeBSONObjIndexedMap<CachedChunkInfo>()),

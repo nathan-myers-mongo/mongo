@@ -60,12 +60,14 @@ void checkAllElementsAreOfType(BSONType type, const BSONObj& o) {
 }  // namespace
 
 ChunkManager::ChunkManager(NamespaceString nss,
+                           boost::optional<UUID> uuid,
                            KeyPattern shardKeyPattern,
                            std::unique_ptr<CollatorInterface> defaultCollator,
                            bool unique,
                            ChunkMap chunkMap,
                            ChunkVersion collectionVersion)
-    : _sequenceNumber(nextCMSequenceNumber.addAndFetch(1)),
+    : uuid(uuid),
+      _sequenceNumber(nextCMSequenceNumber.addAndFetch(1)),
       _nss(std::move(nss)),
       _shardKeyPattern(shardKeyPattern),
       _defaultCollator(std::move(defaultCollator)),
@@ -426,6 +428,7 @@ ChunkManager::ChunkMapViews ChunkManager::_constructChunkMapViews(const OID& epo
 
 std::shared_ptr<ChunkManager> ChunkManager::makeNew(
     NamespaceString nss,
+    boost::optional<UUID> uuid,
     KeyPattern shardKeyPattern,
     std::unique_ptr<CollatorInterface> defaultCollator,
     bool unique,
@@ -434,6 +437,7 @@ std::shared_ptr<ChunkManager> ChunkManager::makeNew(
 
     return ChunkManager(
                std::move(nss),
+               uuid,
                std::move(shardKeyPattern),
                std::move(defaultCollator),
                std::move(unique),
@@ -489,6 +493,7 @@ std::shared_ptr<ChunkManager> ChunkManager::makeUpdated(
 
     return std::shared_ptr<ChunkManager>(
         new ChunkManager(_nss,
+                         uuid,
                          KeyPattern(getShardKeyPattern().getKeyPattern()),
                          CollatorInterface::cloneCollator(getDefaultCollator()),
                          isUnique(),
