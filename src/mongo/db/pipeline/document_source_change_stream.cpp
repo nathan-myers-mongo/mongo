@@ -35,6 +35,7 @@
 #include "mongo/db/catalog/uuid_catalog.h"
 #include "mongo/db/commands/feature_compatibility_version_command_parser.h"
 #include "mongo/db/pipeline/close_change_stream_exception.h"
+#include "mongo/db/pipeline/document_path_support.h"
 #include "mongo/db/pipeline/document_source_check_resume_token.h"
 #include "mongo/db/pipeline/document_source_limit.h"
 #include "mongo/db/pipeline/document_source_lookup_change_post_image.h"
@@ -369,6 +370,16 @@ intrusive_ptr<DocumentSource> DocumentSourceChangeStream::createTransformationSt
         kStageName.toString()));
 }
 
+auto DocumentSourceChangeStream::Transformation::_collectDocumentKeyFields(UUID uuid) const
+    -> std::vector<FieldPath> {
+
+    if (_mongoProcess) {
+        return _mongoProcess->collectDocumentKeyFields(uuid);
+    }
+    // We get here only from unit tests, which should "inject" a MongoProcessInterface if they care.
+    return {};
+}
+
 Document DocumentSourceChangeStream::Transformation::applyTransformation(const Document& input) {
     MutableDocument doc;
 
@@ -383,6 +394,9 @@ Document DocumentSourceChangeStream::Transformation::applyTransformation(const D
     Value uuid = input[repl::OplogEntry::kUuidFieldName];
     if (!uuid.missing()) {
         checkValueType(uuid, repl::OplogEntry::kUuidFieldName, BSONType::BinData);
+        if (_documentKeyFields.empty()) {
+            _documentKeyFields = _collectDocumentKeyFields(uuid.getUuid());
+        }
     }
     NamespaceString nss(ns.getString());
     Value id = input.getNestedField("o._id");
@@ -398,7 +412,8 @@ Document DocumentSourceChangeStream::Transformation::applyTransformation(const D
         case repl::OpTypeEnum::kInsert: {
             operationType = kInsertOpType;
             fullDocument = input[repl::OplogEntry::kObjectFieldName];
-            documentKey = Value(Document{{kIdField, id}});
+            documentKey = Value(document_path_support::extractDocumentKeyFromDoc(
+                fullDocument.getDocument(), _documentKeyFields));
             break;
         }
         case repl::OpTypeEnum::kDelete: {
