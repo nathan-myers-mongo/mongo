@@ -164,7 +164,7 @@ struct ShardMetadataUtilTest : public ShardServerTestFixture {
     ChunkVersion maxCollVersion{0, 0, OID::gen()};
     const KeyPattern keyPattern{BSON("a" << 1)};
     const BSONObj defaultCollation{BSON("locale"
-                                         << "fr_CA")};
+                                        << "fr_CA")};
     const UUID uuid = UUID::gen();
 };
 
@@ -215,8 +215,7 @@ TEST_F(ShardMetadataUtilTest, PersistedRefreshSignalStartAndFinish) {
 
     ASSERT_EQUALS(state.epoch, maxCollVersion.epoch());
     ASSERT_EQUALS(state.refreshing, true);
-    ASSERT_EQUALS(state.lastRefreshedCollectionVersion,
-                  ChunkVersion(0, 0, maxCollVersion.epoch()));
+    ASSERT_EQUALS(state.lastRefreshedCollectionVersion, ChunkVersion(0, 0, maxCollVersion.epoch()));
 
     // Signal refresh finish
     ASSERT_OK(unsetPersistedRefreshFlags(operationContext(), kNss, maxCollVersion));
